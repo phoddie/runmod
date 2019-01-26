@@ -17,8 +17,8 @@ This readme assumes that the runmod directory is located in the Moddable SDK at 
 ## Host
 To build, install, and launch the `runmod` application on the ESP8266, follow the usual steps for the network examples in the Moddable SDK.
 
-		cd $MODDABLE/examples/experimental/runmod
-		mcconfig -d -m -p esp ssid=“MY_WIFI” password="MY_WIFI_PASSWORD"
+	cd $MODDABLE/examples/experimental/runmod
+	mcconfig -d -m -p esp ssid=“MY_WIFI” password="MY_WIFI_PASSWORD"
 
 If everything goes well, in the xsbug debugger you will see the Wi-Fi connection being established:
 
@@ -64,7 +64,7 @@ This compiles the script and creates an archive in `helloworld/build/mod.xsa`.
 
 The `httpget` mod is built the same way, just change the `cd` path to `$MODDABLE/examples/experimental/runmod/mods/httpget`.
 
-The `heeloworld` and `httpget` mods each consist of a single module. The `ping` mod has two modules. The first is the main mod code, the second is the `ping` network protocol module. The `ping` protocol is part of the Moddable SDK. Since it is not part of the `runmod` host, the `ping` mod includes it in its archive. That requires building both modules independently using `xsc` and then using `xsl` to link them together:
+The `helloworld` and `httpget` mods each consist of a single module. The `ping` mod has two modules. The first is the main mod code, the second is the `ping` network protocol module. The `ping` protocol is part of the Moddable SDK. Since it is not part of the `runmod` host, the `ping` mod includes it in its archive. That requires building both modules independently using `xsc` and then using `xsl` to link them together:
 
 	cd $MODDABLE/examples/experimental/runmod/mods/ping
 	xsc ./mod.js -d -e -o ./build
