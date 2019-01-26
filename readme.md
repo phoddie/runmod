@@ -2,20 +2,22 @@
 #### Copyright 2019, Moddable Tech Inc.
 #### Updated January 26, 2019
 
-This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a microcontroller using the Moddable SDK. The project has two parts: the host application and the mods.
+This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a microcontroller using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
 The host application is the base firmware for the microcontroller. It is the "built-in" software that the mods can use. When writing JavaScript for a web page, the browser is the host. When writing JavaScript for a server, Node.js is the host. The `runmod` host contains the XS JavaScript virtual machine, the HTTP server used to upload the mods, and the device firmware for the ESP8266, including Wi-Fi networking. The host is approximately 650 KB, leaving about 375 KB of space for mods.
 
-The JavaScript source code of the mods to be installed are compiled to byte-code on another device, not the microcontroller. The XS Compiler (xsc) and XS Linker (xsl) are used to compile and link the modules to be installed into an XS Archive file, which can contain one or more modules. The archive is uploaded to the microcontroller over HTTP. Once on the microcontroller, the archive is remapped to match the symbol table of the host.
+The JavaScript source code of the mods to be installed are compiled to byte-code on another device, not the microcontroller. The XS Compiler (xsc) and XS Linker (xsl)  compile and link the modules to be installed into an XS Archive file, which can contain one or more modules. The archive is uploaded to the microcontroller over HTTP. Once on the microcontroller, the archive is remapped to match the symbol table of the host.
 
 > Note: The computer portions of this project are intended for use on macOS. It should be possible to use it on Windows and Linux as well, with small changes. The microcontroller portions are for for the ESP8266, and with some changes will work on ESP32 as well.
 
-This example is intended to concisely demonstrate how to build, install, and run mods. It is not intended to be production code. Please learn from this project. Please do not ship it.
+This example concisely demonstrate how to build, install, and run mods. It is not intended to be production code. Please learn from this project. Please do not ship it.
 
-This readme assumes that the runmod directory is located in the Moddable SDK at the following path `$MODDABLE/examples/experimental/runmod`. You may put it elsewhere, but you will need to change the paths.
+This document assumes the `runmod` directory is located in the Moddable SDK at the following path `$MODDABLE/examples/experimental/runmod`. You may put it elsewhere, but you will need to change the paths.
+
+The motivation for creating this project is a [question](https://github.com/Moddable-OpenSource/moddable/issues/116) asked by [FWeinb](https://github.com/FWeinb). Thank you. 
 
 ## Host
-To build, install, and launch the `runmod` application on the ESP8266, follow the usual steps for the network examples in the Moddable SDK.
+To build, install, and launch the `runmod` application on the ESP8266, follow the usual steps for the [network examples](https://github.com/Moddable-OpenSource/moddable/tree/public/examples#wi-fi-configuration) in the Moddable SDK.
 
 ```
 cd $MODDABLE/examples/experimental/runmod
@@ -46,7 +48,7 @@ There is one important detail to be aware of. The `manifest.json` of `runmod` ha
 		"XS_MODS": 1
 	},
 
-Because of this, you must do a clean build for runmod. An easy way to do that is to manually delete `$MODDABLE/build/tmp/esp` and `$MODDABLE/build/bin/esp`.
+Because of this, you must do a clean build for `runmod`. An easy way to do that is to manually delete `$MODDABLE/build/tmp/esp` and `$MODDABLE/build/bin/esp`.
 
 ## Mods
 This project contains three sample mods - hello world, http get, and ping. Each illustrates a different capability. The process for building and installing them is the same.
@@ -95,7 +97,7 @@ Following the uninstall, the ESP8266 waits five seconds and restarts.
 Because the mod is run as a dynamically loaded module on a microcontroller, the environment is quite constrained. This section describes some details to be aware of.
 
 #### Language features
-The XS JavaScript engine implements the JavaScript 2018 specification with a very high degree of conformance. However, to fit the engine into the 1 MB of flash together with the networking firmware and still have room for mods, some JavaScript features are removed. Invoking the features generates an exception. These are the features that are unavailable:
+The XS JavaScript engine implements the JavaScript 2018 specification with a [very high degree of conformance](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/xs/XS%20Conformance.md). However, to fit the engine into the 1 MB of flash available on the ESP8266 together with the networking firmware and still have room for mods, some JavaScript features are removed. Invoking the features generates an exception. These are the features that are unavailable:
 
 - Atomics
 - RegExp
@@ -121,12 +123,12 @@ In practice, this is sufficient for most mods. If you need more, increase the nu
 
 You can see the number of keys used while `runmod` is executing by looking at the "Keys used" area of the Instrumentation panel in xsbug.
 
-#### Host / Built-in modules
+#### Host / Built-in Modules
 The host itself is built using JavaScript modules. Those modules are available to mods. The following modules from the Moddable SDK are built-into the `runmod` host:
 
 - dns
 - dns/parser
-- dns/serialiser
+- dns/serializer
 - flash
 - http
 - mdns
