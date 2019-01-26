@@ -1,0 +1,11 @@
+{
+	"modules": {
+		"*": [
+			"./*",
+			"$(MODDABLE)/modules/network/ping/ping",
+		],
+	},
+	"resources":{
+		"*": "./*"
+	},
+}
