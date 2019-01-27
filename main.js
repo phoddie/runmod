@@ -26,12 +26,14 @@ function restart() @ "xs_restart";		// N.B. restart does not occur immediately. 
 
 	 build and install helloworld or httpget mod:
 		cd $MODDABLE/examples/experimental/runmod/mods/helloworld
+ 		mkdir -p build
 		xsc ./mod.js -d -e -o ./build
 		xsl -a -b ./build -o ./build -r mod ./build/mod.xsb
 		curl -T ./build/mod.xsa http://runmod.local/mod/install
 
 	 build and install ping mod:
 		cd $MODDABLE/examples/experimental/runmod/mods/ping
+		mkdir -p build
 		xsc ./mod.js -d -e -o ./build
 		xsc $MODDABLE/modules/network/ping/ping.js -d -e -o ./build
 		xsl -a -b ./build -o ./build -r mod ./build/mod.xsb ./build/ping.xsb
