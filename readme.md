@@ -4,13 +4,13 @@
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a microcontroller using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
-The host application is the base firmware for the microcontroller. It is the built-in software that defines the behavior of the device and is available for mods can use. When writing JavaScript for a web page, the browser is the host. When writing JavaScript for a server, Node.js is the host. The `runmod` host contains the XS JavaScript virtual machine, the HTTP server used to upload the mods, and the device firmware for the ESP8266, including Wi-Fi networking. The host is approximately 650 KB, leaving about 375 KB of space for mods.
+The host application is the base firmware for the microcontroller. It is the built-in software that defines the behavior of the device and is available for mods to use. When writing JavaScript for a web page, the browser is the host. When writing JavaScript for a server, Node.js is the host. The `runmod` host contains the XS JavaScript virtual machine, the HTTP server used to upload the mods, and the device firmware for the ESP8266, including Wi-Fi networking. The host is approximately 650 KB, leaving about 375 KB of space for mods.
 
 The JavaScript source code of mods is compiled to byte-code on a development machine, not the microcontroller. The XS Compiler (xsc) and XS Linker (xsl)  compile and link the modules to be installed into an XS Archive file, which can contain one or more modules. The archive is uploaded to the microcontroller over HTTP. Once on the microcontroller, the archive is automatically remapped to match the symbol table of the host.
 
-> Note: The computer portions of this project are intended for use on macOS. It should be possible to use it on Windows and Linux as well, with small changes. The microcontroller portions are for for the ESP8266, and with some changes will work on ESP32 as well.
+> Note: The computer portions of this project are intended for use on macOS. It should be possible to use it on Windows and Linux as well, with small changes. The microcontroller portions are for the ESP8266, and with some changes will work on ESP32 as well.
 
-This example concisely demonstrate how to build, install, and run mods. It is not intended to be production code. Please learn from this project. Please do not ship it.
+This example concisely demonstrates how to build, install, and run mods. It is not intended to be production code. Please learn from this project. Please do not ship it.
 
 This document assumes the `runmod` directory is located in the Moddable SDK at the following path `$MODDABLE/examples/experimental/runmod`. You may put it elsewhere, but you will need to change the paths.
 
@@ -29,7 +29,7 @@ If everything goes well, in the xsbug debugger you will see the Wi-Fi connection
 	Wi-Fi connected to "MY_WIFI"
 	IP address 192.168.1.24
 
-Next you'll see an exception in the xsbug debugger telling you there's no mod installed yet. That's true. Just press go to continue execution.
+Next you'll see an exception in the xsbug debugger telling you there's no mod installed yet. That's true. Just press the Run button to continue execution.
 
 	/moddable/examples/experimental/runmod/main.js (80) # Break: require: module "mod" not found!
 
@@ -113,7 +113,7 @@ The XS JavaScript engine implements the JavaScript 2018 specification with a [ve
 The choice of the JavaScript languages features to include and exclude is made by the developer of the host. The `runmod` manifest defines the features to be removed. To change the available language features, change the manifest.
 
 #### Symbols
-Each unique property (variable) name in JavaScript must be tracked by the JavaScript engine. This is required to support various features of the language. The symbols used by the host are stored in flash. Each symbols used by the mod that are not also used by the host require some RAM. The host is configured to support a certain number of symbols in RAM. When this limit is exceeded, an exception is generated. `runmod` is configured to support up to 256 unique symbols in the mod.
+Each unique property (variable) name in JavaScript must be tracked by the JavaScript engine. This is required to support various features of the language. The symbols used by the host are stored in flash. Each symbol used by the mod that is not also used by the host requires some RAM. The host is configured at build time to support a fixed number of symbols in RAM. When this limit is exceeded, an exception is generated. `runmod` is configured to support up to 256 unique symbols in the mod.
 
 	"creation": {
 		"keys": {
@@ -137,7 +137,7 @@ The host itself is built using JavaScript modules. Those modules are available t
 - net
 - sntp
 - socket
-- tme
+- time
 - timer
 - wifi
 
@@ -146,7 +146,7 @@ The `manifest.json` of `runmod` controls which modules are built-in.
 Modules that are built into the host are usually configured in the manifest to preload during the build. By preloading the modules, they use less RAM and load instantly. Modules contained in a mod, however, cannot be preloaded. Therefore, modules that are expected to be used by most mods should be built into the host, rather than delivered as part of the mod.
 
 #### Debugging
-The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a break point on a line of source code or add a `debugger` statement to your mod's source code.
+The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
 
 #### Native Code
-Mods are JavaScript code, by definition. There is no native code in a mod. The XS JavaScript engine supports calling including native code for modules that are built into the host. For example, `runmod` includes a `restart` function to restart the ESP8266.
+Mods are JavaScript code, by definition. There is no native code in a mod. The XS JavaScript engine does support including native code in modules built into the host. For example, `runmod` includes a `restart` function to restart the ESP8266.
