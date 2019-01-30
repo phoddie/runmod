@@ -46,7 +46,7 @@ function restart() @ "xs_restart";		// N.B. restart does not occur immediately. 
 class ModServer extends Server {
 	callback(message, value, etc) {
 		switch (message) {
-			case 2:								// request status received
+			case 2:													// request status received
 				if (value === "/mod/install")
 					this.flash = new Flash("xs_stage");
 				else if (value === "/mod/uninstall") {
@@ -66,10 +66,10 @@ class ModServer extends Server {
 				}
 				break;
 
-			case 4:								// prepare for request body
-				return true;					// provide request body in fragments
+			case 4:													// prepare for request body
+				return true;										// provide request body in fragments
 
-			case 5:								// request body fragment
+			case 5:													// request body fragment
 				if (undefined !== this.position) {
 					let buffer = this.read(ArrayBuffer);
 					trace(`received ${buffer.byteLength} bytes of mod\n`)
@@ -78,7 +78,7 @@ class ModServer extends Server {
 				}
 				break;
 
-			case 6:								// request body received
+			case 6:													// request body received
 				if (undefined !== this.position) {
 					trace("installed mod\n");
 					this.server.restart();
@@ -86,7 +86,7 @@ class ModServer extends Server {
 				break;
 
 			case 8:
-				return {body: "done\n"};
+				return {headers: ['Access-Control-Allow-Origin', '*', 'Access-Control-Allow-Methods', 'GET, PUT'],  body: "done\n"};
 		}
 	}
 	restart() {
@@ -97,6 +97,7 @@ class ModServer extends Server {
 		}, 5000);
 	}
 }
+Object.freeze(ModServer.prototype);
 
 export default function() {
 	new MDNS({hostName: "runmod"});
