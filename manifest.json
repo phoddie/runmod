@@ -8,7 +8,6 @@
 		"*": [
 			"./main",
 			"$(MODULES)/files/flash/*",
-			"$(MODULES)/files/flash/esp/*",
 			"$(MODULES)/network/http/*",
 		],
 	},
@@ -28,6 +27,28 @@
 	},
 	"defines": {
 		"XS_MODS": 1
+	},
+	"platforms": {
+		"esp": {
+			"modules": {
+				"*": [
+					"$(MODULES)/files/flash/esp/*",
+				],
+			},
+			"config": {
+				"modPartition": "xs_stage",
+			},
+		},
+		"esp32": {
+			"modules": {
+				"*": [
+					"$(MODULES)/files/flash/esp32/*",
+				],
+			},
+			"config": {
+				"modPartition": "xs",
+			},
+		},
 	},
 	"strip": [
 	  "fx_Atomics_add",

@@ -16,6 +16,7 @@ import Flash from "flash";
 import MDNS from "mdns";
 import Timer from "timer";
 import {Server} from "http";
+import config from "mc/config";
 
 function restart() @ "xs_restart";		// N.B. restart does not occur immediately. this function returns.
 
@@ -48,9 +49,9 @@ class ModServer extends Server {
 		switch (message) {
 			case 2:													// request status received
 				if (value === "/mod/install")
-					this.flash = new Flash("xs_stage");
+					this.flash = new Flash(config.modPartition);
 				else if (value === "/mod/uninstall") {
-					const flash = new Flash("xs_stage");
+					const flash = new Flash(config.modPartition);
 					flash.write(0, 16, new ArrayBuffer(16));		// overwrite XS Archive signature
 					trace("uninstalled mod\n");
 					this.server.restart();

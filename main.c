@@ -17,6 +17,10 @@
 
 void xs_restart(xsMachine *the)
 {
-	system_restart();
+#if ESP32
+	esp_restart();
+#else
+ 	system_restart();
+#endif
 }
 

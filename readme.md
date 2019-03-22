@@ -1,6 +1,6 @@
 # Building and Installing JavaScript Mods
 #### Copyright 2019, Moddable Tech Inc.
-#### Updated January 26, 2019
+#### Updated March 21, 2019
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a microcontroller using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
@@ -8,7 +8,7 @@ The host application is the base firmware for the microcontroller. It is the bui
 
 The JavaScript source code of mods is compiled to byte-code on a development machine, not the microcontroller. The XS Compiler (xsc) and XS Linker (xsl)  compile and link the modules to be installed into an XS Archive file, which can contain one or more modules. The archive is uploaded to the microcontroller over HTTP. Once on the microcontroller, the archive is automatically remapped to match the symbol table of the host.
 
-> Note: The computer portions of this project are intended for use on macOS. It should be possible to use it on Windows and Linux as well, with small changes. The microcontroller portions are for the ESP8266, and with some changes will work on ESP32 as well.
+> Note: The computer portions of this project are intended for use on macOS. It should be possible to use it on Windows and Linux as well, with small changes. The microcontroller portions are for the ESP8266 and ESP32.
 
 This example concisely demonstrates how to build, install, and run mods. It is not intended to be production code. Please learn from this project. Please do not ship it.
 
