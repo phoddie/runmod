@@ -1,6 +1,6 @@
 # Building and Installing JavaScript Mods
 #### Copyright 2019, Moddable Tech Inc.
-#### Updated March 21, 2019
+#### Updated March 31, 2019
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a microcontroller using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
@@ -145,8 +145,95 @@ The `manifest.json` of `runmod` controls which modules are built-in.
 
 Modules that are built into the host are usually configured in the manifest to preload during the build. By preloading the modules, they use less RAM and load instantly. Modules contained in a mod, however, cannot be preloaded. Therefore, modules that are expected to be used by most mods should be built into the host, rather than delivered as part of the mod.
 
-#### Debugging
-The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
-
 #### Native Code
 Mods are JavaScript code, by definition. There is no native code in a mod. The XS JavaScript engine does support including native code in modules built into the host. For example, `runmod` includes a `restart` function to restart the ESP8266.
+
+## Debugging
+The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
+
+### Host debugging
+"Host debugging" is when the debugging connection is established at the time the JavaScript virtual machine is created. Debugging begins at the first line of JavaScript source code that XS executes.
+
+Host debugging of embedded devices using the Moddable SDK usually runs over a serial connection because serial is fast, reliable, and supported on nearly every microcontroller. Although seldom used, the debugging connection may also run over a network socket. In this case, the host must know the IP address of the computer running xsbug so that it can initiate a connection to the debug server running in xsbug.
+
+### Mod debugging
+This document introduces another approach to debugging, "mod debugging." Because a mod is not the first script a host executes, there is no need to connect to the debugger immediately. Further, the purpose of `runmod` is a host which can support a browser based IDE. Ideally "mod debugging" should support the equivalent of xsbug debugging in the web browser. This is challenging because:
+
+- The implementation of network debugging in the Moddable SDK connects to an xsbug server. The web browser does not accept incoming connections, so cannot act as a server.
+- The xsbug protocol sends XML documents over a network socket. There is no support in the web browser for general purpose communication over a network socket. All communication occurs over a higher level protocol, such as HTTP or WebSocket.
+
+### Debugging over WebSocket protocol
+The WebSocket protocol is the obvious candidate to use to carry the xsbug protocol between the host and the browser because it is already bi-directional. Additionally, the Moddable SDK already has a WebSocket client and server. However, the Moddable SDK implementation of WebSocket is written entirely in JavaScript. It cannot be used while debugging as execution of scripts is suspended while at a breakpoint. Reimplementing all of the WebSocket protocol in native code to be used by the debugger is possible, but tedious.
+
+The solution arrived at is as follows:
+
+- `runmod` hosts a WebSocket server using the WebSocket JavaScript module in the Moddable SDK.
+- The web browser connects to the WebSocket server at any time after the JavaScript virtual machine is running and Wi-Fi network connection has been established.
+- The JavaScript WebSocket server establishes the WebSocket connection, including the upgrade from HTTP to WebSocket and sub-protocol negotiation.
+- Once the handshake is complete, `runmod` detaches the network socket from the WebSocket connection and hands the native lwip socket off to the XS debugging support.
+- The debugging implementation in XS operates as usual using the socket created by the WebSocket server, sending and receiving messages as if it is connected to xsbug.
+- The debugging transport code in `xsPlatform.c` -- which already implements support for serial and socket based connection -- wraps outgoing messages in WebSocket text frames and removes the WebSocket framing information from incoming messages.
+
+### To build
+The experimental support for WebSocket debugging is not yet part of the Moddable SDK. To try it, it is necessary to manually patch the build. The files to replace are in [`runmod/patches` directory](https://github.com/phoddie/runmod/tree/master/patches/).
+
+- `$MODDABLE/modules/network/socket/lwip/modSocket.c` -- add `modSocketGetLWIP` to retrieve the native lwip socket associated with the socket instance
+- `$MODDABLE/xs/platforms/esp/xsPlatform.h` -- define fields for WebSocket send and receive framing
+- `$MODDABLE/xs/platforms/esp/xsPlatform.c` -- implement WebSocket transport support
+- `$MODDABLE/modules/network/websocket/websocket.js` -- implement `detach` and subprotocol negotiation in the server.
+
+### Implementation notes
+
+1. The WebSocket server in `runmod` is available at port 8080. The Moddable SDK implementations of HTTP and WebSocket servers currently do not share the listener on port 80.
+1. The WebSocket server uses a subprotocol of `x-xsbug`. Strictly speaking this is unnecessary, but it is done to be explicit about the kind of data being transported. Should the protocol changes in the future, this mechanism allows for protocol version negotiation.
+1. Only one debugging connection may be active at a time. The Moddable SDK is configured to establish a host debugging connection over serial at start-up. To use mod debugging over WebSockets, there cannot be an active serial debugging connection. To ensure this, when a new incoming WebSocket connection arrives, any existing debugging connecting is closed.
+1. The current implementation of WebSocket support in `xsPlatform.c` breaks support for host debugging directly to xsbug because it assumes the transport is always WebSocket. This needs to be made an option.
+
+### From the browser
+To try out the mod debugging connection from the browser, [a small test](https://github.com/phoddie/runmod/tree/master/html/) is provided in the repository. It connects to `runmod` over WebSockets, sets a breakpoint, and traces messages to the console. It is not a useful example, it is just a starting point.
+
+The most useful part of the example is the `XsbugConnection` class which takes care of establishing the connection as well as sending and receiving messages. Each message in the xsbug protocol is an XML document. The `XsbugConnection` converts incoming messages to JavaScript objects and generates outgoing XML messages in response to JavaScript function calls. The class has been tested, but there may still be bugs and missing features.
+
+#### Connecting
+To establish a connection, pass the URI to the `XsbugConnection` constructor:
+
+	let xsb = new XsbugConnection("ws://runmod.local:8080");
+
+#### Receiving messages
+The `XsbugConnection` instance provides callback functions for each message type sent by xsbug. To receive a message, provide the corresponding callback:
+
+	xsb.onLog = function(msg) {
+		console.log(msg.log)
+	}
+
+The following callbacks are available:
+
+- `onBreak` -- a break point was hit - either a breakpoint that was set, a debugger statement, or an exception
+- `onLogin` -- the first message sent when the connection is established
+- `onInstrumentationConfigure` -- the names and labels for all instrumentation fields
+- `onInstrumentationSamples` -- the current values for all instrumentation fields
+- `onLocal` -- one local stack frame
+- `onLog` -- a log message, such as generated by a call to the global `trace` function
+
+#### Sending messages
+The `XsbugConnection` instance provides functions to send each type of request supported by the XS debugging implementation.
+
+- `doClearBreakpoint(path, line)` -- removes a breakpoint
+- `doGo()` -- resumes execution from a breakpoint
+- `doSetBreakpoint(path, line)` -- sets a breakpoint
+- `doSelect(value)` -- selects a local stack frame. The contents of the stack frame are sent immediately and the `onLocal` callback is invoked with the result.
+- `doSetAllBreakpoints(breakpoints, exceptions)` -- set multiple breakpoints. This is usually sent when the `onLogin` is received. Execution begins when this is received by XS. The `exceptions` argument is optional and defaults to true, which means that the debugger will break on JavaScript exceptions.
+- `doStep` -- execute until the next line of source code
+- `doStepInside` -- execute and break inside the next function called
+- `doStepOutside` -- execute and break when returning from the current function call.
+- `doToggle` -- request that the given object toggle its state for reporting its contents. This is equivalent to clicking the turn down arrow in xsbug that appears to the left of objects.
+
+#### Exploring the xsbug protocol
+The xsbug protocol is undocumented. Some experimentation will be needed to use it. The [source code of xsbug](https://github.com/Moddable-OpenSource/moddable/tree/public/tools/xsbug) is available, which provides a working example. Running xsbug locally with the simulator together with Wireshark is a good way to see how user interface features correspond to protocol messages.
+
+The protocol is quite simple. It relies on the debugger application to do much of the work. The protocol is designed to be as minimal as practical so it can fit comfortably inside a microcontroller as part of the XS engine.
+
+#### Putting it together
+The image below shows the example application running in the Chrome web browser. The messages sent between the browser and the microcontroller are displayed in the console.
+
+![xsbug protocol hosted in Chrome](images/wsxsbug.png)

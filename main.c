@@ -24,3 +24,24 @@ void xs_restart(xsMachine *the)
 #endif
 }
 
+extern void fxConnectTo(xsMachine *the, void *pcb);
+extern void *modSocketGetLWIP(xsMachine *the, xsSlot *slot);
+extern void espDescribeInstrumentation(xsMachine *the);
+
+void xs_debug(xsMachine *the)
+{
+#ifdef mxDebug
+	if (fxIsConnected(the)) {
+		xsTrace("closing debugger connection");
+		fxDisconnect(the);
+	}
+
+	fxConnectTo(the, modSocketGetLWIP(the, &xsArg(0)));
+	fxLogin(the);
+	espDescribeInstrumentation(the);
+
+	xsmcSetBoolean(xsResult, fxIsConnected(the));
+#else
+	xsUnknownError("debugging disabled");
+#endif
+}

@@ -16,9 +16,11 @@ import Flash from "flash";
 import MDNS from "mdns";
 import Timer from "timer";
 import {Server} from "http";
+import {Server as WSServer} from "websocket"
 import config from "mc/config";
 
 function restart() @ "xs_restart";		// N.B. restart does not occur immediately. this function returns.
+function debug(socket) @ "xs_debug";
 
 /*
 	build, install, and launch runmood (host) app:
@@ -100,9 +102,19 @@ class ModServer extends Server {
 }
 Object.freeze(ModServer.prototype);
 
+class XsbugServer extends WSServer {
+	callback(message, value) {
+		if (2 === message)				// handshake complete
+			debug(this.detach());		// hand-off native socket to debugger
+		else if (5 === message)			// negotiate subprotocol
+			return "x-xsbug";
+	}
+}
+
 export default function() {
 	new MDNS({hostName: "runmod"});
 	new ModServer;
+	new XsbugServer({port: 8080});
 
 	try {
 		require("mod");

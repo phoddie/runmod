@@ -9,12 +9,21 @@
 			"./main",
 			"$(MODULES)/files/flash/*",
 			"$(MODULES)/network/http/*",
+			"$(MODULES)/network/websocket/*",
+			"$(MODULES)/data/base64/*",
+			"$(MODULES)/data/logical/*",
+			"$(MODULES)/crypt/digest/*",
+			"$(MODULES)/crypt/digest/kcl/*",
 		],
 	},
 	"preload": [
 		"main",
 		"flash",
 		"http",
+		"websocket",
+		"base64",
+		"digest",
+		"logical",
 	],
 	"resources": {
 		"*": [
