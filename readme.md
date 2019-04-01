@@ -4,6 +4,8 @@
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a microcontroller using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
+> **Note**: This document discusses experimental features of the Moddable SDK. The intended audience is developers of tools interested in exploring the potential of we browser-hosted tools for JavaScript on microcontrollers. It describes how to deploy pre-compiled JavaScript modules to a microcontroller and how to communicate with a microcontroller for debugging. 
+
 The host application is the base firmware for the microcontroller. It is the built-in software that defines the behavior of the device and is available for mods to use. When writing JavaScript for a web page, the browser is the host. When writing JavaScript for a server, Node.js is the host. The `runmod` host contains the XS JavaScript virtual machine, the HTTP server used to upload the mods, and the device firmware for the ESP8266, including Wi-Fi networking. The host is approximately 650 KB, leaving about 375 KB of space for mods.
 
 The JavaScript source code of mods is compiled to byte-code on a development machine, not the microcontroller. The XS Compiler (xsc) and XS Linker (xsl)  compile and link the modules to be installed into an XS Archive file, which can contain one or more modules. The archive is uploaded to the microcontroller over HTTP. Once on the microcontroller, the archive is automatically remapped to match the symbol table of the host.
@@ -157,17 +159,17 @@ The mods are built with debugging enabled (the `-d` option passed to `xsc`). If 
 Host debugging of embedded devices using the Moddable SDK usually runs over a serial connection because serial is fast, reliable, and supported on nearly every microcontroller. Although seldom used, the debugging connection may also run over a network socket. In this case, the host must know the IP address of the computer running xsbug so that it can initiate a connection to the debug server running in xsbug.
 
 ### Mod debugging
-This document introduces another approach to debugging, "mod debugging." Because a mod is not the first script a host executes, there is no need to connect to the debugger immediately. Further, the purpose of `runmod` is a host which can support a browser based IDE. Ideally "mod debugging" should support the equivalent of xsbug debugging in the web browser. This is challenging because:
+This document introduces another approach to debugging, "mod debugging." Because a mod is not the first script a host executes, there is no need to connect to the debugger immediately. Further, the purpose of `runmod` is to be a host that works with only a browser-based IDE. Ideally "mod debugging" should support the equivalent of xsbug debugging in the web browser. This is challenging because:
 
 - The implementation of network debugging in the Moddable SDK connects to an xsbug server. The web browser does not accept incoming connections, so cannot act as a server.
-- The xsbug protocol sends XML documents over a network socket. There is no support in the web browser for general purpose communication over a network socket. All communication occurs over a higher level protocol, such as HTTP or WebSocket.
+- In the xsbug protocol, messages are sent as XML documents over a TCP network socket. In the web browser, all communication occurs over a higher level protocol such as HTTP and WebSocket. There is no support in the web browser for general purpose communication over a plain TCP network socket.
 
 ### Debugging over WebSocket protocol
-The WebSocket protocol is the obvious candidate to use to carry the xsbug protocol between the host and the browser because it is already bi-directional. Additionally, the Moddable SDK already has a WebSocket client and server. However, the Moddable SDK implementation of WebSocket is written entirely in JavaScript. It cannot be used while debugging as execution of scripts is suspended while at a breakpoint. Reimplementing all of the WebSocket protocol in native code to be used by the debugger is possible, but tedious.
+The WebSocket protocol is the obvious candidate to use to carry the xsbug protocol between the host and the browser because it is already bi-directional. Additionally, the Moddable SDK has a WebSocket client and server. However, the Moddable SDK implementation of WebSocket is written entirely in JavaScript. It cannot be used while debugging as execution of scripts is suspended while stopped at a breakpoint. Reimplementing all of the WebSocket protocol in native code to be used by the debugger is possible, but tedious.
 
 The solution arrived at is as follows:
 
-- `runmod` hosts a WebSocket server using the WebSocket JavaScript module in the Moddable SDK.
+- `runmod` hosts a WebSocket server using the WebSocket JavaScript module from the Moddable SDK.
 - The web browser connects to the WebSocket server at any time after the JavaScript virtual machine is running and Wi-Fi network connection has been established.
 - The JavaScript WebSocket server establishes the WebSocket connection, including the upgrade from HTTP to WebSocket and sub-protocol negotiation.
 - Once the handshake is complete, `runmod` detaches the network socket from the WebSocket connection and hands the native lwip socket off to the XS debugging support.
@@ -208,7 +210,7 @@ The `XsbugConnection` instance provides callback functions for each message type
 
 The following callbacks are available:
 
-- `onBreak` -- a break point was hit - either a breakpoint that was set, a debugger statement, or an exception
+- `onBreak` -- a breakpoint was hit - either a breakpoint that was set, a debugger statement, or an exception
 - `onLogin` -- the first message sent when the connection is established
 - `onInstrumentationConfigure` -- the names and labels for all instrumentation fields
 - `onInstrumentationSamples` -- the current values for all instrumentation fields
@@ -222,7 +224,7 @@ The `XsbugConnection` instance provides functions to send each type of request s
 - `doGo()` -- resumes execution from a breakpoint
 - `doSetBreakpoint(path, line)` -- sets a breakpoint
 - `doSelect(value)` -- selects a local stack frame. The contents of the stack frame are sent immediately and the `onLocal` callback is invoked with the result.
-- `doSetAllBreakpoints(breakpoints, exceptions)` -- set multiple breakpoints. This is usually sent when the `onLogin` is received. Execution begins when this is received by XS. The `exceptions` argument is optional and defaults to true, which means that the debugger will break on JavaScript exceptions.
+- `doSetAllBreakpoints(breakpoints, exceptions)` -- set multiple breakpoints. This is usually sent when the `onLogin` is received. Execution begins when this is received by XS. The `exceptions` argument is optional and defaults to true, which causes XS to break in the debugger on JavaScript exceptions.
 - `doStep` -- execute until the next line of source code
 - `doStepInside` -- execute and break inside the next function called
 - `doStepOutside` -- execute and break when returning from the current function call.
