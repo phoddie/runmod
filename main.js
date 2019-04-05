@@ -18,6 +18,7 @@ import Timer from "timer";
 import {Server} from "http";
 import {Server as WSServer} from "websocket"
 import config from "mc/config";
+import Preference from "preference";
 
 function restart() @ "xs_restart";		// N.B. restart does not occur immediately. this function returns.
 function debug(socket) @ "xs_debug";
@@ -44,6 +45,11 @@ function debug(socket) @ "xs_debug";
 
  	uninstall mod
  		curl http://runmod.local/mod/uninstall
+
+	mod runs at boot by default. Change to run on debugger connection, boot, or never
+ 		curl http://runmod.local/mod/config/when/boot
+ 		curl http://runmod.local/mod/config/when/debug
+ 		curl http://runmod.local/mod/config/when/never
  */
 
 class ModServer extends Server {
@@ -57,6 +63,13 @@ class ModServer extends Server {
 					flash.write(0, 16, new ArrayBuffer(16));		// overwrite XS Archive signature
 					trace("uninstalled mod\n");
 					this.server.restart();
+				}
+				else if (value.startsWith("/mod/config/")) {
+					value = value.split("/");
+					if ((undefined !== value[3]) && (undefined !== value[4])) {
+						Preference.set("config", value[3], value[4]);
+						trace(`set config "${value[3]}" to "${value[4]}"\n`);
+					}
 				}
 				break;
 
@@ -104,10 +117,24 @@ Object.freeze(ModServer.prototype);
 
 class XsbugServer extends WSServer {
 	callback(message, value) {
-		if (2 === message)				// handshake complete
+		if (2 === message) {			// handshake complete
 			debug(this.detach());		// hand-off native socket to debugger
+			runModWhen("debug");
+		}
 		else if (5 === message)			// negotiate subprotocol
 			return "x-xsbug";
+	}
+}
+
+function runModWhen(when) {
+	if (when !== (Preference.get("config", "when") || "boot"))
+		return;
+
+	try {
+		require("mod");
+	}
+	catch {
+		trace("exception loading mod\n");
 	}
 }
 
@@ -116,11 +143,6 @@ export default function() {
 	new ModServer;
 	new XsbugServer({port: 8080});
 
-	try {
-		require("mod");
-		trace("mod loaded\n");
-	}
-	catch {
-		trace("exception loading mod\n");
-	}
+	trace("ready\n");
+	runModWhen("boot")
 }
