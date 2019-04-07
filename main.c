@@ -32,13 +32,15 @@ void xs_debug(xsMachine *the)
 {
 #ifdef mxDebug
 	if (fxIsConnected(the)) {
-		xsTrace("closing debugger connection");
+		xsTrace("closing debugger connection\n");
 		fxDisconnect(the);
 	}
 
-	fxConnectTo(the, modSocketGetLWIP(the, &xsArg(0)));
-	fxLogin(the);
-	espDescribeInstrumentation(the);
+	if (xsmcArgc) {
+		fxConnectTo(the, modSocketGetLWIP(the, &xsArg(0)));
+		fxLogin(the);
+		espDescribeInstrumentation(the);
+	}
 
 	xsmcSetBoolean(xsResult, fxIsConnected(the));
 #else
