@@ -41,8 +41,16 @@
 
 #if ESP32
 	#include "rom/ets_sys.h"
+
+	extern err_t tcp_write_safe(struct tcp_pcb *tcpPCB, const void *data, u16_t len, u8_t flags);
+	extern void tcp_output_safe(struct tcp_pcb *tcpPCB);
+	extern void tcp_close_safe(struct tcp_pcb *tcpPCB);
 #else
 	#include "tinyprintf.h"
+
+	#define tcp_write_safe(tcpPCB, data, len, flags) tcp_write(tcpPCB, data, len, flags)
+	#define tcp_output_safe(tcpPCB) tcp_output(tcpPCB)
+	#define tcp_close_safe(tcpPCB) tcp_close(tcpPCB)
 #endif
 
 #include "xsesp.h"
@@ -223,7 +231,7 @@ static err_t didReceive(void * arg, struct tcp_pcb * pcb, struct pbuf * p, err_t
 		if (the->connection) {
 			tcp_recv(the->connection, NULL);
 			tcp_err(the->connection, NULL);
-			tcp_close(the->connection);
+			tcp_close(the->connection);		// not tcp_close_safe inside callback from lwip
 			the->connection = NULL;
 		}
 		return ERR_OK;
@@ -339,7 +347,7 @@ void fxConnect(txMachine* the)
 
 	err = tcp_bind(pcb, IP_ADDR_ANY, 0);
 	if (err) {
-		tcp_close(pcb);
+		tcp_close_safe(pcb);
 		return;
 	}
 
@@ -357,7 +365,7 @@ void fxConnect(txMachine* the)
     modLog("  fxConnect - connect to XSBUG");
 	err = tcp_connect(pcb, &ipaddr, 5002, didConnect);
 	if (err) {
-		tcp_close(pcb);
+		tcp_close_safe(pcb);
 		modLog("  fxConnect - tcp_connect ERROR");
 		return;
 	}
@@ -370,7 +378,7 @@ void fxConnect(txMachine* the)
 		modLog("  fxConnect - couldn't connect");
 		if (NULL == the->connection) {		// timeout.
 			tcp_err(pcb, NULL);
-			tcp_close(pcb);
+			tcp_close_safe(pcb);
 		}
 		the->connection = NULL;
 		return;
@@ -390,17 +398,22 @@ void fxDisconnect(txMachine* the)
 	xmodLog("  fxDisconnect - ENTER");
 	if (the->connection) {
 		if (kSerialConnection != the->connection) {
-			uint8_t i;
+			uint8_t i, closeMsg[2];
 			for (i = 0; i < kDebugReaderCount; i++) {
 				if (the->readers[i]) {
 					pbuf_free(the->readers[i]);
 					the->readers[i] = NULL;
 				}
 			}
+			closeMsg[0] = 0x88;
+			closeMsg[1] = 0;
+			tcp_write_safe(the->connection, closeMsg, sizeof(closeMsg), TCP_WRITE_FLAG_COPY);
+			tcp_output_safe(the->connection);
+
 			the->readerOffset = 0;
 			tcp_recv(the->connection, NULL);
 			tcp_err(the->connection, NULL);
-			tcp_close((struct tcp_pcb *)the->connection);
+			tcp_close_safe((struct tcp_pcb *)the->connection);
 		}
 		else {
 			fx_putpi(the, '-', true);
@@ -710,7 +723,7 @@ void fxSend(txMachine* the, txBoolean more)
 			u16_t available = tcp_sndbuf(pcb);
 			if ((0 == available) || (!sentHeader && (available < 4))) {
 				xmodLog("  fxSend - need to wait");
-				tcp_output(pcb);
+				tcp_output_safe(pcb);
 				modWatchDogReset();
 				modDelayMilliseconds(10);
 				continue;
@@ -730,7 +743,7 @@ void fxSend(txMachine* the, txBoolean more)
 					header[3] = length & 0xff;
 					sentHeader = 4;
 				}
-				tcp_write(pcb, header, sentHeader, more ? TCP_WRITE_FLAG_MORE : 0);
+				tcp_write_safe(pcb, header, sentHeader, more ? (TCP_WRITE_FLAG_MORE | TCP_WRITE_FLAG_COPY) : TCP_WRITE_FLAG_COPY);
 				available -= sentHeader;
 				if (0 == available)
 					continue;
@@ -741,10 +754,10 @@ void fxSend(txMachine* the, txBoolean more)
 
 			while (true) {
 				modWatchDogReset();
-				err = tcp_write(pcb, bytes, available, more ? TCP_WRITE_FLAG_MORE : 0);
+				err = tcp_write_safe(pcb, bytes, available, more ? (TCP_WRITE_FLAG_MORE | TCP_WRITE_FLAG_COPY) : TCP_WRITE_FLAG_COPY);
 				if (ERR_MEM == err) {
 					xmodLog("  fxSend - wait for send memory:");
-					tcp_output(pcb);
+					tcp_output_safe(pcb);
 					modDelayMilliseconds(10);
 					continue;
 				}
@@ -759,7 +772,7 @@ void fxSend(txMachine* the, txBoolean more)
 			bytes += available;
 		}
 		if (!more)
-			tcp_output(pcb);
+			tcp_output_safe(pcb);
 	}
 	else {
 		char *c;
