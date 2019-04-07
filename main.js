@@ -50,11 +50,20 @@ function debug(socket) @ "xs_debug";
  		curl http://runmod.local/mod/config/when/boot
  		curl http://runmod.local/mod/config/when/debug
  		curl http://runmod.local/mod/config/when/never
- */
+*/
+
+const state = {};
 
 class ModServer extends Server {
+	constructor(dictionary) {
+		super(dictionary);
+		state.connections = 0;
+	}
 	callback(message, value, etc) {
 		switch (message) {
+			case 1:													// new connection
+				state.connections += 1;
+				break;
 			case 2:													// request status received
 				if (value === "/mod/install")
 					this.flash = new Flash(config.modPartition);
@@ -62,8 +71,10 @@ class ModServer extends Server {
 					const flash = new Flash(config.modPartition);
 					flash.write(0, 16, new ArrayBuffer(16));		// overwrite XS Archive signature
 					trace("uninstalled mod\n");
-					this.server.restart();
+					state.host.restart();
 				}
+				else if (value === "/mod/restart")
+					state.host.restart();
 				else if (value.startsWith("/mod/config/")) {
 					value = value.split("/");
 					if ((undefined !== value[3]) && (undefined !== value[4])) {
@@ -97,20 +108,21 @@ class ModServer extends Server {
 			case 6:													// request body received
 				if (undefined !== this.position) {
 					trace("installed mod\n");
-					this.server.restart();
+					state.host.restart();
 				}
 				break;
 
 			case 8:
 				return {headers: ['Access-Control-Allow-Origin', '*', 'Access-Control-Allow-Methods', 'GET, PUT'],  body: "done\n"};
+
+			case 10:
+				state.connections--;
+				if ((0 === state.connections) && state.restart) {
+					trace("restart immediately\n");
+					restart();
+				}
+				break;
 		}
-	}
-	restart() {
-		Timer.set(() => {
-			trace("restarting\n");
-			this.close();
-			restart();
-		}, 5000);
 	}
 }
 Object.freeze(ModServer.prototype);
@@ -119,30 +131,56 @@ class XsbugServer extends WSServer {
 	callback(message, value) {
 		if (2 === message) {			// handshake complete
 			debug(this.detach());		// hand-off native socket to debugger
-			runModWhen("debug");
+			state.host.runMod("debug");
 		}
 		else if (5 === message)			// negotiate subprotocol
 			return "x-xsbug";
 	}
 }
+Object.freeze(XsbugServer.prototype);
 
-function runModWhen(when) {
-	if (when !== (Preference.get("config", "when") || "boot"))
-		return;
+class Host {
+	constructor() {
+		this.mdns = new MDNS({hostName: Preference.get("config", "name") || "runmod"});
+		this.server = new ModServer;
+		this.xsbug = new XsbugServer({port: 8080});
 
-	try {
-		require("mod");
+		trace("host ready\n");
+		this.runMod("boot")
 	}
-	catch {
-		trace("exception loading mod\n");
+	restart() {
+		if (this.server)
+			this.server.close(false);
+		if (this.mdns)
+			this.mdns.close();
+		if (this.xsbug)
+			this.xsbug.close();
+		delete this.server;
+		delete this.mdns;
+		delete this.xsbug;
+		debug();
+
+		state.restart = true;
+
+		Timer.set(() => {
+			trace("restart host\n");
+			restart();
+		}, 5000);
+	}
+	runMod(when) {
+		if (when && (when !== (Preference.get("config", "when") || "boot")))
+			return;
+
+		try {
+			require("mod");
+		}
+		catch {
+			trace("exception loading mod\n");
+		}
 	}
 }
+Object.freeze(Host.prototype);
 
 export default function() {
-	new MDNS({hostName: "runmod"});
-	new ModServer;
-	new XsbugServer({port: 8080});
-
-	trace("ready\n");
-	runModWhen("boot")
+	state.host = new Host;
 }
