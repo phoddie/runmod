@@ -231,7 +231,9 @@ static err_t didReceive(void * arg, struct tcp_pcb * pcb, struct pbuf * p, err_t
 		if (the->connection) {
 			tcp_recv(the->connection, NULL);
 			tcp_err(the->connection, NULL);
+#ifdef __ets__
 			tcp_close(the->connection);		// not tcp_close_safe inside callback from lwip
+#endif
 			the->connection = NULL;
 		}
 		return ERR_OK;
@@ -719,7 +721,7 @@ void fxSend(txMachine* the, txBoolean more)
 
 		xmodLog("  fxSend - about to loop");
 
-		while (length) {
+		while (length && the->connection) {
 			u16_t available = tcp_sndbuf(pcb);
 			if ((0 == available) || (!sentHeader && (available < 4))) {
 				xmodLog("  fxSend - need to wait");
@@ -752,7 +754,7 @@ void fxSend(txMachine* the, txBoolean more)
 			if (available > length)
 				available = length;
 
-			while (true) {
+			while (the->connection) {
 				modWatchDogReset();
 				err = tcp_write_safe(pcb, bytes, available, more ? (TCP_WRITE_FLAG_MORE | TCP_WRITE_FLAG_COPY) : TCP_WRITE_FLAG_COPY);
 				if (ERR_MEM == err) {
@@ -771,7 +773,7 @@ void fxSend(txMachine* the, txBoolean more)
 			length -= available;
 			bytes += available;
 		}
-		if (!more)
+		if (!more && the->connection)
 			tcp_output_safe(pcb);
 	}
 	else {
