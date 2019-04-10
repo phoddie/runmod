@@ -169,7 +169,6 @@ class XsbugMessage {
 		const flags = node.attributes.flags.value;
 		const property = {
 			name: node.attributes.name.value,
-			value: node.attributes.value.value,
 			flags: {
 				value: flags,
 				delete: flags.indexOf("C") < 0,
@@ -177,6 +176,8 @@ class XsbugMessage {
 				set: flags.indexOf("W") < 0,
 			},
 		};
+		if (node.attributes.value)
+			property.value = node.attributes.value.value;
 
 		if (node.firstChild) {
 			property.property = [];
