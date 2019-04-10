@@ -228,14 +228,24 @@ static err_t didReceive(void * arg, struct tcp_pcb * pcb, struct pbuf * p, err_t
 
 	if (NULL == p) {
 		xmodLog("  didReceive - CONNECTION LOST");
+		for (i = 0; i < kDebugReaderCount; i++) {
+			if (the->readers[i])
+				pbuf_free(the->readers[i]);
+			the->readers[i] = NULL;
+		}
+
 		if (the->connection) {
 			tcp_recv(the->connection, NULL);
 			tcp_err(the->connection, NULL);
 #ifdef __ets__
-			tcp_close(the->connection);		// not tcp_close_safe inside callback from lwip
+			tcp_close(the->connection);
+			tcp_abort(the->connection);		// not _safe inside callback. must call tcp_abort on ESP8266 or memory leak
 #endif
 			the->connection = NULL;
+
+			return ERR_ABRT;
 		}
+
 		return ERR_OK;
 	}
 
@@ -402,10 +412,9 @@ void fxDisconnect(txMachine* the)
 		if (kSerialConnection != the->connection) {
 			uint8_t i, closeMsg[2];
 			for (i = 0; i < kDebugReaderCount; i++) {
-				if (the->readers[i]) {
+				if (the->readers[i])
 					pbuf_free(the->readers[i]);
-					the->readers[i] = NULL;
-				}
+				the->readers[i] = NULL;
 			}
 			closeMsg[0] = 0x88;
 			closeMsg[1] = 0;
@@ -805,7 +814,6 @@ void fxConnectTo(txMachine *the, struct tcp_pcb *pcb)
 	tcp_arg(pcb, the);
 	tcp_recv(pcb, didReceive);
 	tcp_err(pcb, didError);
-	tcp_sent(pcb, NULL);
 
 	the->connection = pcb;
 }
