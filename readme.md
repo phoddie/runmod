@@ -75,9 +75,10 @@ The `helloworld` and `httpget` mods each consist of a single module named `mod`.
 
 	cd $MODDABLE/examples/experimental/runmod/mods/ping
 	mkdir -p build
+	mkdir -p build/network
 	xsc ./mod.js -d -e -o ./build
-	xsc $MODDABLE/modules/network/ping/ping.js -d -e -o ./build
-	xsl -a -b ./build -o ./build -r mod ./build/mod.xsb ./build/ping.xsb
+	xsc $MODDABLE/modules/network/ping/ping.js -d -e -o ./build/network
+	xsl -a -b ./build -o ./build -r mod ./build/mod.xsb ./build/network/ping.xsb
 
 ### Install
 A mod is installed to `runmod` using an HTTP PUT. This project uses the `curl` command line tool for this. The mod is contained in an XS Archive, which is a single file with a `.xsa` extension. It is uploaded as follows:

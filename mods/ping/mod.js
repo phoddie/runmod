@@ -12,7 +12,7 @@
  *
  */
 
-import Ping from "ping";
+import Ping from "network/ping";
 
 const HOST = "www.moddable.com";
 const ID = 0;
