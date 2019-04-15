@@ -117,10 +117,8 @@ class ModServer extends Server {
 
 			case 10:
 				state.connections--;
-				if ((0 === state.connections) && state.restart) {
-					trace("restart immediately\n");
-					restart();
-				}
+				if ((0 === state.connections) && state.restart)
+					state.host.restart(1000);
 				break;
 		}
 	}
@@ -148,7 +146,7 @@ class Host {
 		trace("host ready\n");
 		this.runMod("boot")
 	}
-	restart() {
+	restart(delay = 5000) {
 		if (this.server)
 			this.server.close(false);
 		if (this.mdns)
@@ -158,14 +156,21 @@ class Host {
 		delete this.server;
 		delete this.mdns;
 		delete this.xsbug;
-		debug();
+		debug();						// disconnect debugger
 
-		state.restart = true;
-
-		Timer.set(() => {
-			trace("restart host\n");
-			restart();
-		}, 5000);
+		let now = Date.now(), restartTime = now + delay;
+		if (!state.restart) {
+			state.restart = Timer.set(function() {
+				trace("restart host\n");
+				restart();
+			}, delay);
+		}
+		else {
+			if (restartTime > state.restartTime)
+				restartTime = state.restartTime;
+			Timer.schedule(state.restart, restartTime - now);
+		}
+		state.restartTime = restartTime;
 	}
 	runMod(when) {
 		if (when && (when !== (Preference.get("config", "when") || "boot")))
