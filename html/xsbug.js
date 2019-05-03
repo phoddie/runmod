@@ -103,44 +103,38 @@ class XsbugConnection extends WebSocket {
 
 	// transmit host messages
 	doGetPreference(domain, key, callback) {
-		const byteLength = 1 + 2 + domain.length + 1 + key.length + 1;
-		const bytes = new Uint8Array(byteLength);
+		const byteLength = domain.length + 1 + key.length + 1;
+		const payload = new Uint8Array(byteLength);
 		let j = 0;
-		bytes[j++] = 6;
-		bytes[j++] = this.requestID >> 8;
-		bytes[j++] = this.requestID & 0xff;
 		for (let i = 0; i < domain.length; i++)
-			bytes[j++] = domain.charCodeAt(i)
+			payload[j++] = domain.charCodeAt(i)
 		j++;
 		for (let i = 0; i < key.length; i++)
-			bytes[j++] =  key.charCodeAt(i);
+			payload[j++] =  key.charCodeAt(i);
 
-		this.sendBinaryCommand(bytes, {callback, id: this.requestID++});
+		this.sendBinaryCommand(6, payload, callback);
 	}
 	doInstall(offset, data) {
 		const max = 512;
 		for (let i = 0; i < data.byteLength; i += max, offset += max) {
 			const use = Math.min(max, data.byteLength - i);
-			const bytes = new Uint8Array(1 + 2 + 4 + use);
-			bytes[0] = 3;
-			bytes[3] = (offset >> 24) & 0xff;
-			bytes[4] = (offset >> 16) & 0xff;
-			bytes[5] = (offset >>  8) & 0xff;
-			bytes[6] =  offset        & 0xff;
-			bytes.set(new Uint8Array(data, i, use), 7);
+			const payload = new Uint8Array(4 + use);
+			payload[0] = (offset >> 24) & 0xff;
+			payload[1] = (offset >> 16) & 0xff;
+			payload[2] = (offset >>  8) & 0xff;
+			payload[3] =  offset        & 0xff;
+			payload.set(new Uint8Array(data, i, use), 4);
 
-			this.sendBinaryCommand(bytes);
+			this.sendBinaryCommand(3, payload);
 		}
 	}
 	doRestart() {
-		this.sendBinaryCommand(Uint8Array.of(1));
+		this.sendBinaryCommand(1);
 	}
 	doSetPreference(domain, key, value) {		// assumes 7 bit ASCII values
-		const byteLength = 1 + 2 + domain.length + 1 + key.length + 1 + value.length + 1;
+		const byteLength = domain.length + 1 + key.length + 1 + value.length + 1;
 		const bytes = new Uint8Array(byteLength);
 		let j = 0;
-		bytes[j++] = 4;
-		j += 2;
 		for (let i = 0; i < domain.length; i++)
 			bytes[j++] = domain.charCodeAt(i)
 		j++;
@@ -150,10 +144,10 @@ class XsbugConnection extends WebSocket {
 		for (let i = 0; i < value.length; i++)
 			bytes[j++] = value.charCodeAt(i)
 
-		this.sendBinaryCommand(bytes);
+		this.sendBinaryCommand(4, payload);
 	}
-	doUninstall() {
-		this.sendBinaryCommand(Uint8Array.of(2));
+	doUninstall(callback) {
+		this.sendBinaryCommand(2, undefined, callback);
 	}
 
 	// receive messages
@@ -168,10 +162,26 @@ class XsbugConnection extends WebSocket {
 	sendCommand(msg) {
 		this.send(XsbugConnection.crlf + msg + XsbugConnection.crlf);
 	}
-	sendBinaryCommand(data, pending) {
-		if (pending)
-			this.pending.push(pending);
-		this.send(data);
+	sendBinaryCommand(command, payload, callback) {
+		if (payload) {
+			if (!(payload instanceof ArrayBuffer))
+				payload = payload.buffer;
+		}
+		let needed = 1;
+		if (payload)
+			needed += 2 + payload.byteLength;
+		else if (callback)
+			needed += 2;
+		const msg = new Uint8Array(needed);
+		msg[0] = command;
+		if (callback) {
+			msg[1] = this.requestID >> 8;
+			msg[2] = this.requestID & 0xff;
+			this.pending.push({callback, id: this.requestID++});
+		}
+		if (payload)
+			msg.set(new Uint8Array(payload), 3);
+		this.send(msg.buffer);
 	}
 }
 XsbugConnection.crlf = String.fromCharCode(13) + String.fromCharCode(10);

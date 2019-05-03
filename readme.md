@@ -1,6 +1,6 @@
 # Building and Installing JavaScript Mods
 #### Copyright 2019, Moddable Tech Inc.
-#### Updated May 2, 2019
+#### Updated May 3, 2019
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a ESP8266 and ESP32 microcontrollers using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
@@ -143,7 +143,6 @@ The host itself is built using JavaScript modules. Those modules are available t
 - dns
 - dns/parser
 - dns/serializer
-- flash
 - http
 - mdns
 - net
@@ -226,7 +225,7 @@ There is no length stored in the command itself as the length is part of the Web
 
 > Note: for messages with no payload, the two byte message ID is optional. If not present, no reply is sent.
 
-Replies are optional so that there is no unnecessary network traffic on requests where the initiator does not want the reply. Replies contain a unique message ID so multiple requests may be pipelined rather than having to wait for a response after sending each one. This should help to speed installs of large mods, for example.
+Replies are optional so that there is no unnecessary network traffic on requests where the initiator does not want the reply. Replies contain a unique message ID so multiple requests may be pipelined rather than having to wait for a response after sending each one. This should help to speed installs of large mods, for example. 
 
 ### Commands
 Commands ID values are stored as a one byte value. The same Command IDs are used for sending and receiving. All multi-byte integer values are transmitted in network byte order (e.g. big-endian).
@@ -252,15 +251,16 @@ The name of the device may be changed from `runmod` by setting the preference in
 ## Example from browser
 To try out the mod debugging and remote commands from the browser, [a small test](https://github.com/phoddie/runmod/tree/master/html/) is provided in the repository. It connects to `runmod` over WebSockets, sets a breakpoint, and traces messages to the console. It is not a useful example, it is just a starting point.
 
-The most useful part of the example is the `XsbugConnection` class which takes care of establishing the connection as well as sending and receiving messages. Each message in the xsbug protocol is an XML document. The `XsbugConnection` converts incoming messages to JavaScript objects and generates outgoing XML messages in response to JavaScript function calls. The class has been tested, but there may still be bugs and missing features.
+The most useful part of the example is the `XsbugConnection` class which establishes the connection as well as sending and receiving messages. Each message in the xsbug protocol is an XML document. The `XsbugConnection` converts incoming messages to JavaScript objects and generates outgoing XML messages in response to JavaScript function calls. The class has been tested, but there may still be bugs and missing features.
 
-The example contains two pre-compiled mods - helloworld and httpget. Ten seconds after establishing a connection to `runmod` on the microcontroller, it installs helloworld and restarts. You can modify the example to install `httpget` instead.
+The example contains two pre-compiled mods - `helloworld` and `httpget`. Ten seconds after establishing a connection to `runmod` on the microcontroller, it installs `helloworld` and restarts.
 
 	setTimeout(function() {
 		xsb.doInstall(0, helloWorldXSA)
 		xsb.doRestart()
 	}, 10 * 1000);
 
+You can modify the example to install `httpget` instead by changing `helloWorldXSA` to `httpGetXSA`.
 
 #### Connecting
 To establish a connection, pass the URI to the `XsbugConnection` constructor:
@@ -305,6 +305,8 @@ The `XsbugConnection` instance provides functions to send Commands to the microc
 - `doUninstall()` -- Uninstall the current mod. A restart is necessary after this for the change to take effect.
 - `doInstall(offset, data)` -- Install data for new mod. A restart is necessary after this for the change to take effect. The `offset` starts at 0. The `data` must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments no bigger than 512 bytes.
 - `doSetPreference(domain, key, value)` -- Sets the value of a preference to a string.
+
+> Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference` and `doUninstall` commands use of it.
 
 #### Exploring the xsbug protocol
 The xsbug protocol is undocumented. Some experimentation will be needed to use it. The [source code of xsbug](https://github.com/Moddable-OpenSource/moddable/tree/public/tools/xsbug) is available, which provides a working example. Running xsbug locally with the simulator together with Wireshark is a good way to see how user interface features correspond to protocol messages.
