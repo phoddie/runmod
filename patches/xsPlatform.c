@@ -38,15 +38,21 @@
 #include "xsAll.h"
 #include "stdio.h"
 #include "lwip/tcp.h"
+#include "modTimer.h"
 
 #if ESP32
 	#include "rom/ets_sys.h"
 
-	extern err_t tcp_write_safe(struct tcp_pcb *tcpPCB, const void *data, u16_t len, u8_t flags);
-	extern void tcp_output_safe(struct tcp_pcb *tcpPCB);
-	extern void tcp_close_safe(struct tcp_pcb *tcpPCB);
+//	extern err_t tcp_write_safe(struct tcp_pcb *tcpPCB, const void *data, u16_t len, u8_t flags);
+//	extern void tcp_output_safe(struct tcp_pcb *tcpPCB);
+//	extern void tcp_close_safe(struct tcp_pcb *tcpPCB);
+//@@
+	#define tcp_write_safe(tcpPCB, data, len, flags) tcp_write(tcpPCB, data, len, flags)
+	#define tcp_output_safe(tcpPCB) tcp_output(tcpPCB)
+	#define tcp_close_safe(tcpPCB) tcp_close(tcpPCB)
 #else
 	#include "tinyprintf.h"
+	#include "spi_flash.h"
 
 	#define tcp_write_safe(tcpPCB, data, len, flags) tcp_write(tcpPCB, data, len, flags)
 	#define tcp_output_safe(tcpPCB) tcp_output(tcpPCB)
@@ -63,6 +69,7 @@
 #endif
 
 static void fx_putpi(txMachine *the, char separator, txBoolean trailingcrlf);
+static void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen);
 
 #if defined (mxDebug) && ESP32
 	SemaphoreHandle_t gDebugMutex;
@@ -264,7 +271,7 @@ static err_t didReceive(void * arg, struct tcp_pcb * pcb, struct pbuf * p, err_t
 	if (NULL == p) {
 		if (!the->debugNotifyOutstanding) {
 			the->debugNotifyOutstanding = true;
-			modMessagePostToMachine(the, NULL, 0, doDebugCommand, the);
+			modMessagePostToMachine(the, NULL, 0xffff, doDebugCommand, the);
 		}
 	}
 	else {
@@ -504,6 +511,7 @@ void fxReceive(txMachine* the)
 				switch (the->wsState) {
 					case 0:
 						the->wsState = 1;
+						the->wsCmd = (2 == (byte & 0x0f)) ? (void *)-1 : NULL;		// binary data is cmd; text is xsbug
 						break;
 					case 1:
 						byte &= 0x7F;
@@ -530,6 +538,11 @@ void fxReceive(txMachine* the)
 					case 8:
 						the->wsMask[the->wsState - 5] = byte;
 						the->wsState += 1;
+						if ((9 == the->wsState) && the->wsCmd) {
+							the->wsCmd = c_malloc(the->wsLength);
+							the->wsCmdPtr = the->wsCmd;
+							the->wsState = the->wsCmd ? 13 : 17;
+						}
 						break;
 					case 9:
 					case 10:
@@ -543,6 +556,31 @@ void fxReceive(txMachine* the)
 						if (0 == the->wsLength)
 							the->wsState = 0;
 						break;
+
+					case 13:
+					case 14:
+					case 15:
+					case 16:
+						*(the->wsCmdPtr++) = byte ^ the->wsMask[the->wsState - 13];
+						the->wsState += 1;
+						if (17 == the->wsState)
+							the->wsState = 13;
+						the->wsLength -= 1;
+						if (0 == the->wsLength) {
+							// received full command
+							doCommmand(the, the->wsCmd, the->wsCmdPtr - the->wsCmd);
+							c_free(the->wsCmd);
+							the->wsCmd = the->wsCmdPtr = NULL;
+							the->wsState = 0;
+						}
+						break;
+
+					case 17:
+						the->wsLength -= 1;
+						if (0 == the->wsLength)
+							the->wsState = 0;
+						break;
+
 				}
 			}
 			the->readerOffset += use;
@@ -705,7 +743,7 @@ void fxReceiveLoop(void)
 				}
 				if (!current->debugNotifyOutstanding) {
 					current->debugNotifyOutstanding = true;
-					modMessagePostToMachine(current, NULL, 0, doDebugCommand, current);
+					modMessagePostToMachine(current, NULL, 0xffff, doDebugCommand, current);
 				}
 				bufferedBytes = 0;
 			}
@@ -714,9 +752,11 @@ void fxReceiveLoop(void)
 	mxDebugMutexGive();
 }
 
-void fxSend(txMachine* the, txBoolean more)
+void fxSend(txMachine* the, txBoolean flags)
 {
 	struct tcp_pcb *pcb = the->connection;
+	txBoolean more = 0 != (flags & 1);
+	txBoolean binary = 0 != (flags & 2);
 
 	xmodLog("  fxSend - ENTER");
 
@@ -742,7 +782,7 @@ void fxSend(txMachine* the, txBoolean more)
 
 			if (!sentHeader) {
 				uint8_t header[4];
-				header[0] = (the->wsSendStart ? 0x01 : 0) | (more ? 0 : 0x80);
+				header[0] = (the->wsSendStart ? (binary ? 0x02 : 0x01) : 0) | (more ? 0 : 0x80);
 				the->wsSendStart = !more;
 				if (length < 126) {
 					header[1] = (uint8_t)length;
@@ -816,6 +856,158 @@ void fxConnectTo(txMachine *the, struct tcp_pcb *pcb)
 	tcp_err(pcb, didError);
 
 	the->connection = pcb;
+}
+
+static void doRestart(modTimer timer, void *refcon, int refconSize)
+{
+#if ESP32
+	esp_restart();
+#else
+	system_restart();
+#endif
+}
+
+extern uint8_t _XSMOD_start;
+extern uint8_t _XSMOD_end;
+
+#define kPrefsTypeString (3)
+
+extern uint8_t modPreferenceSet(char *domain, char *name, uint8_t type, uint8_t *value, uint16_t byteCount);
+extern uint8_t modPreferenceGet(char *domain, char *key, uint8_t *type, uint8_t *value, uint16_t byteCountIn, uint16_t *byteCountOut);
+
+void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
+{
+	uint16_t resultID = 0;
+	int16_t resultCode = 0;
+	uint8_t cmdID;
+
+	if (!cmdLen)
+		return;
+
+	cmdID = *cmd++;
+	cmdLen -= 1;
+
+	if (cmdLen >= 2) {
+		resultID = (cmd[0] << 8) | cmd[1];
+		cmd += 2, cmdLen -= 2;
+
+		the->echoBuffer[0] = 5;
+		the->echoBuffer[1] = resultID >> 8;
+		the->echoBuffer[2] = resultID & 0xff;
+		the->echoBuffer[3] = 0;
+		the->echoBuffer[4] = 0;
+		the->echoOffset = 5;
+	}
+
+	switch (cmdID) {
+		case 1:		// restart
+			fxDisconnect(the);
+			modTimerAdd(1000, 0, doRestart, NULL, 0);
+			break;
+
+		case 2: {		// uninstall
+#if ESP32
+			//@@
+#else
+			uint8_t erase[16] = {0};
+			uint32_t offset = (uintptr_t)&_XSMOD_start - (uintptr_t)kFlashStart;
+//			flash.partitionByteLength = &_XSMOD_end - &_XSMOD_start;		//@@
+
+			if (!modSPIWrite(offset, sizeof(erase), erase))
+				resultCode = -1;
+#endif
+			} break;
+
+		case 3: {	// install some
+			uint32_t offset;
+
+			offset += (cmd[0] << 24) | (cmd[1] << 16) | (cmd[2] << 8) | cmd[3];
+			cmd += 4, cmdLen -= 4;
+#if ESP32
+			//@@
+#else
+			// check for overflow...
+			offset += (uintptr_t)&_XSMOD_start - (uintptr_t)kFlashStart;
+
+			int firstSector = offset / SPI_FLASH_SEC_SIZE, lastSector = (offset + cmdLen) / SPI_FLASH_SEC_SIZE;
+			if (!(offset % SPI_FLASH_SEC_SIZE))			// starts on sector boundary
+				modSPIErase(offset, SPI_FLASH_SEC_SIZE * ((lastSector - firstSector) + 1));
+			else if (firstSector != lastSector)
+				modSPIErase((firstSector + 1) * SPI_FLASH_SEC_SIZE, SPI_FLASH_SEC_SIZE * (lastSector - firstSector));	// crosses into a new sector
+
+			if (!modSPIWrite(offset, cmdLen, cmd))
+				resultCode = -1;
+#endif
+			}
+			break;
+
+		case 4: {	// set preference
+#if ESP32
+			//@@
+#else
+			uint8_t *domain = cmd, *key = NULL, *value = NULL;
+			int zeros = 0;
+			while (cmdLen--) {
+				if (!*cmd++) {
+					zeros += 1;
+					if (NULL == key)
+						key = cmd;
+					else if (NULL == value)
+						value = cmd;
+					else
+						break;
+				}
+			}
+			if ((3 == zeros) && key && value) {
+				if (!modPreferenceSet(domain, key, kPrefsTypeString, value, c_strlen(value) + 1))
+					resultCode = -1;
+			}
+#endif
+			}
+			break;
+
+		case 6: {		// get preference
+#if ESP32
+		//@@
+#else
+			uint8_t *domain = cmd, *key = NULL, *value = NULL;
+			int zeros = 0;
+			while (cmdLen--) {
+				if (!*cmd++) {
+					zeros += 1;
+					if (NULL == key)
+						key = cmd;
+					else
+						break;
+				}
+			}
+			if ((2 == zeros) && key) {
+				uint8_t buffer[64];
+				uint8_t type;
+				uint16_t byteCountOut;
+				if (!modPreferenceGet(domain, key, &type, buffer, sizeof(buffer), &byteCountOut) || (kPrefsTypeString != type))
+					resultCode = -1;
+				else {
+					c_memcpy(the->echoBuffer + the->echoOffset, buffer, byteCountOut);
+					the->echoOffset += byteCountOut;
+				}
+			}
+#endif
+		}
+		break;
+
+		default:
+			modLog("unrecognized command");
+			modLogInt(cmd[-1]);
+			resultCode = -1;
+			break;
+	}
+
+	if (resultID) {
+		the->echoBuffer[3] = resultCode >> 8;
+		the->echoBuffer[4] = resultCode & 0xff;
+		fxSend(the, 2);		// send binary
+	}
 }
 
 #if defined(mxDebug) && ESP32

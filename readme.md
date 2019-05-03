@@ -1,16 +1,16 @@
 # Building and Installing JavaScript Mods
 #### Copyright 2019, Moddable Tech Inc.
-#### Updated April 7, 2019
+#### Updated May 2, 2019
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a ESP8266 and ESP32 microcontrollers using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
 > **Note**: This document discusses experimental features of the Moddable SDK. The intended audience is developers of tools interested in exploring the potential of we browser-hosted tools for JavaScript on microcontrollers. It describes how to deploy pre-compiled JavaScript modules to a microcontroller and how to communicate with a microcontroller for debugging. 
 
-The host application is the base firmware for the microcontroller. It is the built-in software that defines the behavior of the device and is available for mods to use. When writing JavaScript for a web page, the browser is the host. When writing JavaScript for a server, Node.js is the host. The `runmod` host contains the XS JavaScript virtual machine, the HTTP server used to upload the mods, and the device firmware for the ESP8266, including Wi-Fi networking. The host is approximately 650 KB, leaving about 375 KB of space for mods.
+The host application is the base firmware for the microcontroller. It is the built-in software that defines the behavior of the device and is available for mods to use. When writing JavaScript for a web page, the browser is the host. When writing JavaScript for a server, Node.js is the host. The `runmod` host contains the XS JavaScript virtual machine, an HTTP client and server, a WebSocket client and server, and the device firmware for the ESP8266, including Wi-Fi networking. The host is approximately 700 KB, leaving about 350 KB of space for mods.
 
 The JavaScript source code of mods is compiled to byte-code on a development machine, not the microcontroller. The XS Compiler (xsc) and XS Linker (xsl)  compile and link the modules to be installed into an XS Archive file, which can contain one or more modules. The archive is uploaded to the microcontroller over HTTP. Once on the microcontroller, the archive is automatically remapped to match the symbol table of the host.
 
-> Note: The computer portions of this project are intended for use on macOS. It should be possible to use it on Windows and Linux as well, with small changes. The microcontroller portions are for the ESP8266 and ESP32.
+> Note: The computer portions of this project are intended for use on macOS. It should be possible to use it on Windows and Linux as well, with small changes. The microcontroller portions are for the ESP8266. ESP32 currently works for debugging but not commands -- this will be addressed shortly.
 
 This example concisely demonstrates how to build, install, and run mods. It is not intended to be production code. Please learn from this project. Please do not ship it.
 
@@ -80,6 +80,7 @@ The `helloworld` and `httpget` mods each consist of a single module named `mod`.
 	xsc $MODDABLE/modules/network/ping/ping.js -d -e -o ./build/network
 	xsl -a -b ./build -o ./build -r mod ./build/mod.xsb ./build/network/ping.xsb
 
+<!--
 ### Install
 A mod is installed to `runmod` using an HTTP PUT. This project uses the `curl` command line tool for this. The mod is contained in an XS Archive, which is a single file with a `.xsa` extension. It is uploaded as follows:
 
@@ -102,6 +103,7 @@ Following the uninstall, the microcontroller restarts.
 Because mods are ECMAScript modules, they are only loaded once into a virtual machine. To re-run the top-level code in the mod, restart the JavaScript VM. 
 
 	curl http://runmod.local/mod/restart
+-->
 
 ### Execution Environment
 Because the mod is run as a dynamically loaded module on a microcontroller, the environment is constrained in various ways. The constrained speed and available RAM are well known challenges of embedded development. This section describes other details to be aware of.
@@ -120,7 +122,7 @@ The XS JavaScript engine implements the JavaScript 2018 specification with a [ve
 
 The choice of the JavaScript languages features to include and exclude is made by the developer of the host. The `runmod` manifest defines the features to be removed. To change the available language features, change the manifest.
 
-> Note: Microcontrollers able to address a larger flash address space, such as the ESP32, may include more of the JavaScript language. For consistency, `runmod` provides the same features on an microcontrollers.
+> Note: Microcontrollers able to address a larger flash address space, such as the ESP32, may include more of the JavaScript language. For consistency, `runmod` provides the same features on all microcontrollers.
 
 #### Symbols
 Each unique property (variable) name in JavaScript must be tracked by the JavaScript engine. This is required to support various features of the language. The symbols used by the host are stored in flash. Each symbol used by the mod that is not also used by the host requires some RAM. The host is configured at build time to support a fixed number of symbols in RAM. When this limit is exceeded, an exception is generated. `runmod` is configured to support up to 256 unique symbols in the mod.
@@ -156,39 +158,20 @@ The `manifest.json` of `runmod` controls which modules are built-in.
 Modules that are built into the host are usually configured in the manifest to preload during the build. By preloading the modules, they use less RAM and load instantly. Modules contained in a mod, however, cannot be preloaded. Therefore, modules that are expected to be used by most mods should be built into the host, rather than delivered as part of the mod.
 
 #### Native Code
-Mods are JavaScript code, by definition. There is no native code in a mod. The XS JavaScript engine does support including native code in modules built into the host. For example, `runmod` includes a `restart` function to restart the microcontroller.
+Mods are JavaScript code, by definition. There is no native code in a mod. The XS JavaScript engine does support including native code in modules built into the host.
 
-#### Configuration
-By default, the install mod is run immediately on booting the microcontroller. The mod can be configured to run immediately after a debugger connection is established or never. The choice is configured by performing a GET on one of the following URLS:
+## Communicating with `runmod`
+The `runmod` app communicates over the network using the WebSocket protocol. The WebSocket protocol is used because:
 
- 		http://runmod.local/mod/config/when/boot
- 		http://runmod.local/mod/config/when/debug
- 		http://runmod.local/mod/config/when/never
+- It is fully bi-directional, unlike HTTP.
+- Web browsers have excellent support for WebSocket making it possible to implement development tools in the browser.
 
-The name of the device may be changed from `runmod` by setting the name:
+`runmod` hosts a WebSocket server on port 8080. Development tools, such as an IDE, connect to the WebSocket server. Only one development tool may connect to `runmod` at a time. The WebSocket connection is used for debugging (xsbug) and to manage mods (install, uninstall, etc).
 
- 		http://runmod.local/mod/config/name/mynewname
+All debugging messages are sent as WebSocket text messages. All other messages (commands) are sent as WebSocket binary messages. The Debugging section below explains how to interact with the xsbug protocol; the Remote Commands, how to send and receive command message.
  
- > Note: `runmod` does not perform validation checks on the name provided. It must be a valid mDNS name, less than 32 characters. Using all lower-case letters is recommended.
- 
-## Debugging
-The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
-
-### Host debugging
-"Host debugging" is when the debugging connection is established at the time the JavaScript virtual machine is created. Debugging begins at the first line of JavaScript source code that XS executes.
-
-Host debugging of embedded devices using the Moddable SDK usually runs over a serial connection because serial is fast, reliable, and supported on nearly every microcontroller. Although seldom used, the debugging connection may also run over a network socket. In this case, the host must know the IP address of the computer running xsbug so that it can initiate a connection to the debug server running in xsbug.
-
-### Mod debugging
-This document introduces another approach to debugging, "mod debugging." Because a mod is not the first script a host executes, there is no need to connect to the debugger immediately. Further, the purpose of `runmod` is to be a host that works with only a browser-based IDE. Ideally "mod debugging" should support the equivalent of xsbug debugging in the web browser. This is challenging because:
-
-- The implementation of network debugging in the Moddable SDK connects to an xsbug server. The web browser does not accept incoming connections, so cannot act as a server.
-- In the xsbug protocol, messages are sent as XML documents over a TCP network socket. In the web browser, all communication occurs over a higher level protocol such as HTTP and WebSocket. There is no support in the web browser for general purpose communication over a plain TCP network socket.
-
-### Debugging over WebSocket protocol
+### WebSocket connection design
 The WebSocket protocol is the obvious candidate to use to carry the xsbug protocol between the host and the browser because it is already bi-directional. Additionally, the Moddable SDK has a WebSocket client and server. However, the Moddable SDK implementation of WebSocket is written entirely in JavaScript. It cannot be used while debugging as execution of scripts is suspended while stopped at a breakpoint. Reimplementing all of the WebSocket protocol in native code to be used by the debugger is possible, but tedious.
-
-The solution arrived at is as follows:
 
 - `runmod` hosts a WebSocket server using the WebSocket JavaScript module from the Moddable SDK.
 - The web browser connects to the WebSocket server at any time after the JavaScript virtual machine is running and Wi-Fi network connection has been established.
@@ -205,16 +188,79 @@ The experimental support for WebSocket debugging is not yet part of the Moddable
 
 ### Implementation notes
 
-1. The WebSocket server in `runmod` is available at port 8080. The Moddable SDK implementations of HTTP and WebSocket servers currently do not share the listener on port 80.
+1. The WebSocket server in `runmod` is available at port 8080.
 1. The WebSocket server uses a subprotocol of `x-xsbug`. Strictly speaking this is unnecessary, but it is done to be explicit about the kind of data being transported. Should the protocol changes in the future, this mechanism allows for protocol version negotiation.
 1. Only one debugging connection may be active at a time. The Moddable SDK is configured to establish a host debugging connection over serial at start-up. To use mod debugging over WebSockets, there cannot be an active serial debugging connection. To ensure this, when a new incoming WebSocket connection arrives, any existing debugging connecting is closed.
 1. The current implementation of WebSocket support in `xsPlatform.c` breaks support for host debugging directly to xsbug because it assumes the transport is always WebSocket. This needs to be made an option.
 1. On a clean shut-down the server sends a WebSocket close message.
 
-### From the browser
-To try out the mod debugging connection from the browser, [a small test](https://github.com/phoddie/runmod/tree/master/html/) is provided in the repository. It connects to `runmod` over WebSockets, sets a breakpoint, and traces messages to the console. It is not a useful example, it is just a starting point.
+## Debugging
+The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
+
+### Host debugging
+"Host debugging" is when the debugging connection is established at the time the JavaScript virtual machine is created. Debugging begins at the first line of JavaScript source code that XS executes.
+
+Host debugging of embedded devices using the Moddable SDK usually runs over a serial connection because serial is fast, reliable, and supported on nearly every microcontroller. Although seldom used, the debugging connection may also run over a network socket. In this case, the host must know the IP address of the computer running xsbug so that it can initiate a connection to the debug server running in xsbug.
+
+### Mod debugging
+This document introduces another approach to debugging, "mod debugging." Because a mod is not the first script a host executes, there is no need to connect to the debugger immediately. Further, the purpose of `runmod` is to be a host that works with only a browser-based IDE. "mod debugging" supports the equivalent of xsbug debugging in the web browser. 
+
+## Remote Commands
+Commands are sent to `runmod` over a WebSocket using a simple binary message format. Either side of the connection -- `runmod` or the development tool -- may send messages as it is a peer-to-peer protocol, not client-server.
+
+Remote Commands may be sent whether or on JavaScript is being executed, including when stopped at a breakpoint. When a command is received by the microcontroller execution of JavaScript by XS is suspended, if it is not already, in the receiving virtual machine. This allows several remote commands to be sent while execution is suspended. Execution resumes by sending a Go command on the xsbug protocol (e.g. `doGo` in the example below). 
+
+### Binary message format
+All Command messages use the binary WebSocket message format.
+
+- Fragmentation is not supported. Each message must be self-contained.
+- There is no maximum message size. However, the message received must fit into the free RAM of the microcontroller. A safe maximum message size is 1024 bytes, though many devices can handle much more.
+
+All messages are organized in the same format:
+
+- One byte command code
+- Two byte message ID. Set this to 0 if no reply is needed. Set it any value to receive a reply. The reply will use the same message ID.
+- The payload follows. This may be zero or more bytes.
+
+There is no length stored in the command itself as the length is part of the WebSocket message framing.
+
+> Note: for messages with no payload, the two byte message ID is optional. If not present, no reply is sent.
+
+Replies are optional so that there is no unnecessary network traffic on requests where the initiator does not want the reply. Replies contain a unique message ID so multiple requests may be pipelined rather than having to wait for a response after sending each one. This should help to speed installs of large mods, for example.
+
+### Commands
+Commands ID values are stored as a one byte value. The same Command IDs are used for sending and receiving. All multi-byte integer values are transmitted in network byte order (e.g. big-endian).
+
+- 0 - **reserved**. It is an error to send a command with this ID.
+- 1 - **restart** (no payload). Closes the WebSocket connection and restarts the target device.
+- 2 - **uninstall mod** (no payload). Uninstalls the current mod. Restart is required for this to take effect. It is not necessary to uninstall prior to installing a mod.
+- 3 - **install mod data**. Because mods are often bigger than 1 KB, they must be fragmented when installed. The fragments start at offset 0 and increase. There should be no gaps. The first four bytes of the payload are the offset into the mod data stored, the remaining payload bytes are mod binary data.
+- 4 - **set preference**. The payload is 3 zero-terminated (C) strings: preference domain, key, and value. 
+- 5 - **reply**. The first two bytes of the payload are the message ID that this reply corresponds to. The next two bytes are the result code (0 for no error). Any additional data is specific to the command code of the requesting message.
+
+### Preferences
+The `runmod` application uses the preferences feature of the Moddable SDK to configure certain options.
+
+#### When a mod runs
+By default, the install mod is run immediately on booting the microcontroller. The mod can be configured to run immediately after a debugger connection is established or never. The choice is configured by setting the `config` domain and `when` key to `boot`, `debug` or `never`.
+
+#### Device name
+The name of the device may be changed from `runmod` by setting the preference in `config` domain with the `name` key.
+
+ > Note: `runmod` does not perform validation checks on the name provided. It must be a valid mDNS name, less than 32 characters. Using all lower-case letters is recommended.
+
+## Example from browser
+To try out the mod debugging and remote commands from the browser, [a small test](https://github.com/phoddie/runmod/tree/master/html/) is provided in the repository. It connects to `runmod` over WebSockets, sets a breakpoint, and traces messages to the console. It is not a useful example, it is just a starting point.
 
 The most useful part of the example is the `XsbugConnection` class which takes care of establishing the connection as well as sending and receiving messages. Each message in the xsbug protocol is an XML document. The `XsbugConnection` converts incoming messages to JavaScript objects and generates outgoing XML messages in response to JavaScript function calls. The class has been tested, but there may still be bugs and missing features.
+
+The example contains two pre-compiled mods - helloworld and httpget. Ten seconds after establishing a connection to `runmod` on the microcontroller, it installs helloworld and restarts. You can modify the example to install `httpget` instead.
+
+	setTimeout(function() {
+		xsb.doInstall(0, helloWorldXSA)
+		xsb.doRestart()
+	}, 10 * 1000);
+
 
 #### Connecting
 To establish a connection, pass the URI to the `XsbugConnection` constructor:
@@ -251,6 +297,14 @@ The `XsbugConnection` instance provides functions to send each type of request s
 - `doStepInside` -- execute and break inside the next function called
 - `doStepOutside` -- execute and break when returning from the current function call.
 - `doToggle` -- request that the given object toggle its state for reporting its contents. This is equivalent to clicking the turn down arrow in xsbug that appears to the left of objects.
+
+The `XsbugConnection` instance provides functions to send Commands to the microcontroller.
+
+- `doGetPreference(domain, key, callback)` -- Retrieves the value of a preference as a string. The callback function is invoked with the result.
+- `doRestart()` -- Restart the microcontroller. The WebSocket connection will be closed.
+- `doUninstall()` -- Uninstall the current mod. A restart is necessary after this for the change to take effect.
+- `doInstall(offset, data)` -- Install data for new mod. A restart is necessary after this for the change to take effect. The `offset` starts at 0. The `data` must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments no bigger than 512 bytes.
+- `doSetPreference(domain, key, value)` -- Sets the value of a preference to a string.
 
 #### Exploring the xsbug protocol
 The xsbug protocol is undocumented. Some experimentation will be needed to use it. The [source code of xsbug](https://github.com/Moddable-OpenSource/moddable/tree/public/tools/xsbug) is available, which provides a working example. Running xsbug locally with the simulator together with Wireshark is a good way to see how user interface features correspond to protocol messages.

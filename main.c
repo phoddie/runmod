@@ -15,15 +15,6 @@
 #include "xsmc.h"
 #include "xsesp.h"
 
-void xs_restart(xsMachine *the)
-{
-#if ESP32
-	esp_restart();
-#else
- 	system_restart();
-#endif
-}
-
 extern void fxConnectTo(xsMachine *the, void *pcb);
 extern void *modSocketGetLWIP(xsMachine *the, xsSlot *slot);
 extern void espDescribeInstrumentation(xsMachine *the);

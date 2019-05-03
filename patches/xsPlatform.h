@@ -145,6 +145,8 @@ typedef struct DebugFragmentRecord *DebugFragment;
 		uint16_t wsLength; \
 		uint16_t wsSendStart; \
 		uint8_t wsMask[4]; \
+		uint8_t *wsCmd; \
+		uint8_t *wsCmdPtr; \
 		DebugFragment debugFragments;
 #else
 	#define mxMachineDebug
