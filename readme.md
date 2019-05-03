@@ -302,11 +302,11 @@ The `XsbugConnection` instance provides functions to send Commands to the microc
 
 - `doGetPreference(domain, key, callback)` -- Retrieves the value of a preference as a string. The callback function is invoked with the result.
 - `doRestart()` -- Restart the microcontroller. The WebSocket connection will be closed.
-- `doUninstall()` -- Uninstall the current mod. A restart is necessary after this for the change to take effect.
+- `doUninstall([callback])` -- Uninstall the current mod. A restart is necessary after this for the change to take effect. Optional callback is invoked with result code from microcontroller.
 - `doInstall(offset, data)` -- Install data for new mod. A restart is necessary after this for the change to take effect. The `offset` starts at 0. The `data` must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments no bigger than 512 bytes.
 - `doSetPreference(domain, key, value)` -- Sets the value of a preference to a string.
 
-> Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference` and `doUninstall` commands use of it.
+> Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference` and `doUninstall` commands use it.
 
 #### Exploring the xsbug protocol
 The xsbug protocol is undocumented. Some experimentation will be needed to use it. The [source code of xsbug](https://github.com/Moddable-OpenSource/moddable/tree/public/tools/xsbug) is available, which provides a working example. Running xsbug locally with the simulator together with Wireshark is a good way to see how user interface features correspond to protocol messages.
