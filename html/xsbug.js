@@ -133,16 +133,16 @@ class XsbugConnection extends WebSocket {
 	}
 	doSetPreference(domain, key, value) {		// assumes 7 bit ASCII values
 		const byteLength = domain.length + 1 + key.length + 1 + value.length + 1;
-		const bytes = new Uint8Array(byteLength);
+		const payload = new Uint8Array(byteLength);
 		let j = 0;
 		for (let i = 0; i < domain.length; i++)
-			bytes[j++] = domain.charCodeAt(i)
+			payload[j++] = domain.charCodeAt(i)
 		j++;
 		for (let i = 0; i < key.length; i++)
-			bytes[j++] =  key.charCodeAt(i)
+			payload[j++] =  key.charCodeAt(i)
 		j++;
 		for (let i = 0; i < value.length; i++)
-			bytes[j++] = value.charCodeAt(i)
+			payload[j++] = value.charCodeAt(i)
 
 		this.sendBinaryCommand(4, payload);
 	}
@@ -312,7 +312,7 @@ xsb.onLogin = function(msg) {
 	setTimeout(function() {
 		xsb.doInstall(0, helloWorldXSA);
 		xsb.doRestart();
-	}, 10 * 1000);
+	}, 5 * 1000);
 }
 xsb.onBreak = function(msg) {
 	this.doGo();
