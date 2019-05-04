@@ -38,7 +38,6 @@
 #include "xsAll.h"
 #include "stdio.h"
 #include "lwip/tcp.h"
-#include "modTimer.h"
 
 #if ESP32
 	#include "rom/ets_sys.h"
@@ -868,15 +867,6 @@ void fxConnectTo(txMachine *the, struct tcp_pcb *pcb)
 	the->connection = pcb;
 }
 
-static void doRestart(modTimer timer, void *refcon, int refconSize)
-{
-#if ESP32
-	esp_restart();
-#else
-	system_restart();
-#endif
-}
-
 #if !ESP32
 extern uint8_t _XSMOD_start;
 extern uint8_t _XSMOD_end;
@@ -914,7 +904,13 @@ void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 	switch (cmdID) {
 		case 1:		// restart
 			fxDisconnect(the);
-			modTimerAdd(1000, 0, doRestart, NULL, 0);
+			modDelayMilliseconds(1000);
+#if ESP32
+			esp_restart();
+#else
+			system_restart();
+#endif
+			modDelayMilliseconds(100000);		// should never return
 			return;
 
 		case 2: {		// uninstall
@@ -947,7 +943,7 @@ void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 				else if (firstSector != lastSector)
 					esp_partition_erase_range(partition, (firstSector + 1) * SPI_FLASH_SEC_SIZE, SPI_FLASH_SEC_SIZE * (lastSector - firstSector));	// crosses into a new sector
 
-				if (ESP_OK == esp_partition_write(partition, 0, cmd, cmdLen))
+				if (ESP_OK == esp_partition_write(partition, offset, cmd, cmdLen))
 					resultCode = 0;
 			}
 #else
