@@ -42,14 +42,15 @@
 
 #if ESP32
 	#include "rom/ets_sys.h"
+	#include "nvs_flash/include/nvs_flash.h"
 
-//	extern err_t tcp_write_safe(struct tcp_pcb *tcpPCB, const void *data, u16_t len, u8_t flags);
-//	extern void tcp_output_safe(struct tcp_pcb *tcpPCB);
-//	extern void tcp_close_safe(struct tcp_pcb *tcpPCB);
-//@@
-	#define tcp_write_safe(tcpPCB, data, len, flags) tcp_write(tcpPCB, data, len, flags)
-	#define tcp_output_safe(tcpPCB) tcp_output(tcpPCB)
-	#define tcp_close_safe(tcpPCB) tcp_close(tcpPCB)
+	extern err_t tcp_write_safe(struct tcp_pcb *tcpPCB, const void *data, u16_t len, u8_t flags);
+	extern void tcp_output_safe(struct tcp_pcb *tcpPCB);
+	extern void tcp_close_safe(struct tcp_pcb *tcpPCB);
+////@@
+//	#define tcp_write_safe(tcpPCB, data, len, flags) tcp_write(tcpPCB, data, len, flags)
+//	#define tcp_output_safe(tcpPCB) tcp_output(tcpPCB)
+//	#define tcp_close_safe(tcpPCB) tcp_close(tcpPCB)
 #else
 	#include "tinyprintf.h"
 	#include "spi_flash.h"
@@ -69,7 +70,7 @@
 #endif
 
 static void fx_putpi(txMachine *the, char separator, txBoolean trailingcrlf);
-static void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen);
+static void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen);
 
 #if defined (mxDebug) && ESP32
 	SemaphoreHandle_t gDebugMutex;
@@ -244,7 +245,8 @@ static err_t didReceive(void * arg, struct tcp_pcb * pcb, struct pbuf * p, err_t
 		if (the->connection) {
 			tcp_recv(the->connection, NULL);
 			tcp_err(the->connection, NULL);
-#ifdef __ets__
+#if ESP32
+#else
 			tcp_close(the->connection);
 			tcp_abort(the->connection);		// not _safe inside callback. must call tcp_abort on ESP8266 or memory leak
 #endif
@@ -567,11 +569,17 @@ void fxReceive(txMachine* the)
 							the->wsState = 13;
 						the->wsLength -= 1;
 						if (0 == the->wsLength) {
-							// received full command
-							doCommmand(the, the->wsCmd, the->wsCmdPtr - the->wsCmd);
+							// received full remote command
+							doRemoteCommmand(the, the->wsCmd, the->wsCmdPtr - the->wsCmd);
 							c_free(the->wsCmd);
 							the->wsCmd = the->wsCmdPtr = NULL;
 							the->wsState = 0;
+							if (NULL == the->connection) {		// disconnected
+								c_strcpy(the->debugBuffer, "\r\n<go/>\r\n");
+								the->debugOffset = 9;
+								mxDebugMutexGive();
+								return;
+							}
 						}
 						break;
 
@@ -634,7 +642,9 @@ void doDebugCommand(void *machine, void *refcon, uint8_t *message, uint16_t mess
 	txMachine* the = machine;
 
 	the->debugNotifyOutstanding = false;
-	if (kSerialConnection == the->connection) {
+	if (NULL == the->connection)
+		return;
+	else if (kSerialConnection == the->connection) {
 		if (!the->debugFragments)
 			return;
 	}
@@ -867,6 +877,7 @@ static void doRestart(modTimer timer, void *refcon, int refconSize)
 #endif
 }
 
+#if !ESP32
 extern uint8_t _XSMOD_start;
 extern uint8_t _XSMOD_end;
 
@@ -874,8 +885,9 @@ extern uint8_t _XSMOD_end;
 
 extern uint8_t modPreferenceSet(char *domain, char *name, uint8_t type, uint8_t *value, uint16_t byteCount);
 extern uint8_t modPreferenceGet(char *domain, char *key, uint8_t *type, uint8_t *value, uint16_t byteCountIn, uint16_t *byteCountOut);
+#endif
 
-void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
+void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 {
 	uint16_t resultID = 0;
 	int16_t resultCode = 0;
@@ -903,13 +915,15 @@ void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 		case 1:		// restart
 			fxDisconnect(the);
 			modTimerAdd(1000, 0, doRestart, NULL, 0);
-			break;
+			return;
 
 		case 2: {		// uninstall
-#if ESP32
-			//@@
-#else
 			uint8_t erase[16] = {0};
+#if ESP32
+			const esp_partition_t *partition = esp_partition_find_first(0x40, 1,  NULL);
+			if (!partition || (ESP_OK != esp_partition_write(partition, 0, erase, sizeof(erase))))
+				resultCode = -1;
+#else
 			uint32_t offset = (uintptr_t)&_XSMOD_start - (uintptr_t)kFlashStart;
 //			flash.partitionByteLength = &_XSMOD_end - &_XSMOD_start;		//@@
 
@@ -924,7 +938,18 @@ void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 			offset += (cmd[0] << 24) | (cmd[1] << 16) | (cmd[2] << 8) | cmd[3];
 			cmd += 4, cmdLen -= 4;
 #if ESP32
-			//@@
+			const esp_partition_t *partition = esp_partition_find_first(0x40, 1,  NULL);
+			resultCode = -1;
+			if (partition) {
+				int firstSector = offset / SPI_FLASH_SEC_SIZE, lastSector = (offset + cmdLen) / SPI_FLASH_SEC_SIZE;
+				if (!(offset % SPI_FLASH_SEC_SIZE))			// starts on sector boundary
+					esp_partition_erase_range(partition, offset, SPI_FLASH_SEC_SIZE * ((lastSector - firstSector) + 1));
+				else if (firstSector != lastSector)
+					esp_partition_erase_range(partition, (firstSector + 1) * SPI_FLASH_SEC_SIZE, SPI_FLASH_SEC_SIZE * (lastSector - firstSector));	// crosses into a new sector
+
+				if (ESP_OK == esp_partition_write(partition, 0, cmd, cmdLen))
+					resultCode = 0;
+			}
 #else
 			// check for overflow...
 			offset += (uintptr_t)&_XSMOD_start - (uintptr_t)kFlashStart;
@@ -942,9 +967,6 @@ void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 			break;
 
 		case 4: {	// set preference
-#if ESP32
-			//@@
-#else
 			uint8_t *domain = cmd, *key = NULL, *value = NULL;
 			int zeros = 0;
 			while (cmdLen--) {
@@ -959,17 +981,24 @@ void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 				}
 			}
 			if ((3 == zeros) && key && value) {
+#if ESP32
+				nvs_handle handle;
+				resultCode = -1;
+
+				if (ESP_OK == nvs_open(domain, NVS_READWRITE, &handle)) {
+					if (ESP_OK == nvs_set_str(handle, key, value))
+						resultCode = 0;
+					nvs_close(handle);
+				}
+#else
 				if (!modPreferenceSet(domain, key, kPrefsTypeString, value, c_strlen(value) + 1))
 					resultCode = -1;
-			}
 #endif
+			}
 			}
 			break;
 
 		case 6: {		// get preference
-#if ESP32
-		//@@
-#else
 			uint8_t *domain = cmd, *key = NULL, *value = NULL;
 			int zeros = 0;
 			while (cmdLen--) {
@@ -982,6 +1011,19 @@ void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 				}
 			}
 			if ((2 == zeros) && key) {
+#if ESP32
+				nvs_handle handle;
+				resultCode = -1;
+
+				if (ESP_OK == nvs_open(domain, NVS_READONLY, &handle)) {
+					int32_t size = 64;
+					if (ESP_OK == nvs_get_str(handle, key, the->echoBuffer + the->echoOffset, &size)) {
+						the->echoOffset += size;
+						resultCode = 0;
+					}
+					nvs_close(handle);
+				}
+#else
 				uint8_t buffer[64];
 				uint8_t type;
 				uint16_t byteCountOut;
@@ -991,8 +1033,8 @@ void doCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 					c_memcpy(the->echoBuffer + the->echoOffset, buffer, byteCountOut);
 					the->echoOffset += byteCountOut;
 				}
-			}
 #endif
+			}
 		}
 		break;
 
