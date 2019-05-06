@@ -1,5 +1,6 @@
 # Moddable Tools in WebAssembly
-May 5, 2019
+#### Copyright 2019 Moddable Tech, Inc.
+#### May 6, 2019
 
 The XS compiler and linker together with the [Moddable SDK build tools](https://github.com/Moddable-OpenSource/moddable/tree/public/tools) are now available as an WebAssembly (wasm) build. The tools are implemented using a mix of C code and JavaScript. The JavaScript code is executed by the XS JavaScript engine, which is part of the wasm build.
 
@@ -9,7 +10,7 @@ All tools are built into a single binary for convenience of working in the wasm 
 
 Normally apps using the Moddable SDK are built using the [`mcconfig` tool](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/tools.md#mcconfig) which uses a JSON [application manifest](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/manifest.md) to determine what to build. Moddable SDK apps contain both native code and JavaScript. Mods, on the other hand, contain only JavaScript code. A new tools, `mcrun`, is the equivalent of `mcconfig` for mods. It uses a subset of the same manifest format, which includes support for JavaScript modules and resources, but excludes all support related to building and configuring native code.
 
-## Build instructions
+## Build Instructions
 
 - Do a clean rebuild of the macOS tool chain
 
