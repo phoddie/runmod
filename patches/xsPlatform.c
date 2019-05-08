@@ -918,7 +918,8 @@ void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 #else
 			system_restart();
 #endif
-			modDelayMilliseconds(100000);		// should never return
+			while (1)
+				modDelayMilliseconds(1000);
 			return;
 
 		case 2: {		// uninstall
