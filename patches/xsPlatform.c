@@ -938,9 +938,7 @@ void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 			} break;
 
 		case 3: {	// install some
-			uint32_t offset;
-
-			offset += (cmd[0] << 24) | (cmd[1] << 16) | (cmd[2] << 8) | cmd[3];
+			uint32_t offset = (cmd[0] << 24) | (cmd[1] << 16) | (cmd[2] << 8) | cmd[3];
 			cmd += 4, cmdLen -= 4;
 #if ESP32
 			const esp_partition_t *partition = esp_partition_find_first(0x40, 1,  NULL);
