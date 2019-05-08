@@ -38,6 +38,10 @@ Normally apps using the Moddable SDK are built using the [`mcconfig` tool](https
 - In a browser go to `http://localhost:8000`. There is button to select a directory. Select for instance `runmod/mods/helloworld`.
 The archive is built and downloaded.
 
+> **Note**: The wasm tools are built for the `web` environment. To use them in a `worker` environment change the definition of `ENVIRONMENT` in [`build/makefiles/wasm/tools.mk`](https://github.com/Moddable-OpenSource/moddable/blob/public/build/makefiles/wasm/tools.mk#L220):
+
+	-s ENVIRONMENT=worker\
+
 ## Executing `mcrun` in the Browser
 If you look at the HTML file you will notice that most of the code is to upload the files in the tools file system and to download the archive from the tools file system. To build the archive, the script first calls `mcrun`:
 
