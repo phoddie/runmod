@@ -142,6 +142,7 @@ typedef struct DebugFragmentRecord *DebugFragment;
 		txBoolean DEBUG_LOOP; \
 		uint8_t debugConnectionVerified; \
 		uint8_t wsState; \
+		uint8_t	wsFin; \
 		uint16_t wsLength; \
 		uint16_t wsSendStart; \
 		uint8_t wsMask[4]; \

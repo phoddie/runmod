@@ -230,6 +230,7 @@ static err_t didReceive(void * arg, struct tcp_pcb * pcb, struct pbuf * p, err_t
 {
 	txMachine* the = arg;
 	uint8_t i;
+	err_t result = ERR_OK;
 
     xmodLog("  didReceive - ENTER");
 
@@ -277,14 +278,14 @@ static err_t didReceive(void * arg, struct tcp_pcb * pcb, struct pbuf * p, err_t
 	}
 	else {
 		modLog("  debug receive overflow");
-		pbuf_free(p);
+		result = ERR_MEM;
 	}
 
 	mxDebugMutexGive();
 
 	xmodLog("  didReceive - EXIT");
 
-	return ERR_OK;
+	return result;
 }
 
 static void didError(void *arg, err_t err)
@@ -512,6 +513,8 @@ void fxReceive(txMachine* the)
 				switch (the->wsState) {
 					case 0:
 						the->wsState = 1;
+						the->wsFin = 0 != (0x80 & byte);
+						if (NULL == the->wsCmd)
 						the->wsCmd = (2 == (byte & 0x0f)) ? (void *)-1 : NULL;		// binary data is cmd; text is xsbug
 						break;
 					case 1:
@@ -540,8 +543,17 @@ void fxReceive(txMachine* the)
 						the->wsMask[the->wsState - 5] = byte;
 						the->wsState += 1;
 						if ((9 == the->wsState) && the->wsCmd) {
-							the->wsCmd = c_malloc(the->wsLength);
-							the->wsCmdPtr = the->wsCmd;
+							if (((void *)-1) == the->wsCmd) {	// new frame
+								the->wsCmd = c_malloc(the->wsLength + sizeof(uint32_t));
+								*(uint32_t *)the->wsCmd = the->wsLength + sizeof(uint32_t);
+								the->wsCmdPtr = the->wsCmd + sizeof(uint32_t);
+							}
+							else {		// continuation frame
+								uint32_t length = *(uint32_t *)the->wsCmd;
+								the->wsCmd = c_realloc(the->wsCmd, length + the->wsLength);
+								*(uint32_t *)the->wsCmd = length + the->wsLength;
+								the->wsCmdPtr = the->wsCmd + length;
+							}
 							the->wsState = the->wsCmd ? 13 : 17;
 						}
 						break;
@@ -568,17 +580,13 @@ void fxReceive(txMachine* the)
 							the->wsState = 13;
 						the->wsLength -= 1;
 						if (0 == the->wsLength) {
+							if (the->wsFin) {
 							// received full remote command
-							doRemoteCommmand(the, the->wsCmd, the->wsCmdPtr - the->wsCmd);
+								doRemoteCommmand(the, the->wsCmd + sizeof(uint32_t), the->wsCmdPtr - (the->wsCmd + sizeof(uint32_t)));
 							c_free(the->wsCmd);
 							the->wsCmd = the->wsCmdPtr = NULL;
-							the->wsState = 0;
-							if (NULL == the->connection) {		// disconnected
-								c_strcpy(the->debugBuffer, "\r\n<go/>\r\n");
-								the->debugOffset = 9;
-								mxDebugMutexGive();
-								return;
 							}
+							the->wsState = 0;
 						}
 						break;
 
