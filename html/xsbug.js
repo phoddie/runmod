@@ -50,7 +50,7 @@ class XsbugConnection extends WebSocket {
 					if (index >= 0) {
 						const pending = this.pending[index];
 						this.pending.splice(index, 1);
-						(pending.callback)(id, code, event.data.slice(5));
+						(pending.callback)(code, event.data.slice(5));
 					}
 					break;
 				default:
@@ -297,7 +297,7 @@ xsb.onLogin = function(msg) {
 	this.doSetAllBreakpoints([{path: "/Users/hoddie/Projects/moddable/examples/network/websocket/websocketserver/main.js", line: 51}]);
 	this.doStep();
 
-	this.doGetPreference("config", "when", function(id, code, data) {
+	this.doGetPreference("config", "when", function(code, data) {
 		if (code) {
 			console.log("can't get config/when pref");
 			return;
