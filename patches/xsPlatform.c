@@ -433,7 +433,8 @@ void fxDisconnect(txMachine* the)
 			the->readerOffset = 0;
 			tcp_recv(the->connection, NULL);
 			tcp_err(the->connection, NULL);
-			tcp_close_safe((struct tcp_pcb *)the->connection);
+			if (18 != the->wsState)
+				tcp_close_safe((struct tcp_pcb *)the->connection);
 		}
 		else {
 			fx_putpi(the, '-', true);
@@ -514,8 +515,14 @@ void fxReceive(txMachine* the)
 					case 0:
 						the->wsState = 1;
 						the->wsFin = 0 != (0x80 & byte);
-						if (NULL == the->wsCmd)
-						the->wsCmd = (2 == (byte & 0x0f)) ? (void *)-1 : NULL;		// binary data is cmd; text is xsbug
+						if (NULL == the->wsCmd) {
+							if (8 == (byte & 0x0f)) {		// close
+								fxDisconnect(the);
+								use = 0;
+								break;
+							}
+							the->wsCmd = (2 == (byte & 0x0f)) ? (void *)-1 : NULL;		// binary data is cmd; text is xsbug
+						}
 						break;
 					case 1:
 						byte &= 0x7F;
@@ -551,8 +558,10 @@ void fxReceive(txMachine* the)
 							else {		// continuation frame
 								uint32_t length = *(uint32_t *)the->wsCmd;
 								the->wsCmd = c_realloc(the->wsCmd, length + the->wsLength);
-								*(uint32_t *)the->wsCmd = length + the->wsLength;
-								the->wsCmdPtr = the->wsCmd + length;
+								if (the->wsCmd) {
+									*(uint32_t *)the->wsCmd = length + the->wsLength;
+									the->wsCmdPtr = the->wsCmd + length;
+								}
 							}
 							the->wsState = the->wsCmd ? 13 : 17;
 						}
@@ -581,10 +590,10 @@ void fxReceive(txMachine* the)
 						the->wsLength -= 1;
 						if (0 == the->wsLength) {
 							if (the->wsFin) {
-							// received full remote command
+								// received full remote command
 								doRemoteCommmand(the, the->wsCmd + sizeof(uint32_t), the->wsCmdPtr - (the->wsCmd + sizeof(uint32_t)));
-							c_free(the->wsCmd);
-							the->wsCmd = the->wsCmdPtr = NULL;
+								c_free(the->wsCmd);
+								the->wsCmd = the->wsCmdPtr = NULL;
 							}
 							the->wsState = 0;
 						}
@@ -595,6 +604,8 @@ void fxReceive(txMachine* the)
 						if (0 == the->wsLength)
 							the->wsState = 0;
 						break;
+					case 18:
+						break;		// reserved for disconnecting on restart (don't close socket)
 
 				}
 			}
@@ -911,6 +922,7 @@ void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 
 	switch (cmdID) {
 		case 1:		// restart
+			the->wsState = 18;
 			fxDisconnect(the);
 			modDelayMilliseconds(1000);
 #if ESP32
