@@ -169,7 +169,7 @@ The `runmod` app communicates over the network using the WebSocket protocol. The
 
 All debugging messages are sent as WebSocket text messages. All other messages (commands) are sent as WebSocket binary messages. The Debugging section below explains how to interact with the xsbug protocol; the Remote Commands, how to send and receive command message.
  
-### WebSocket connection design
+### WebSocket Connection Design
 The WebSocket protocol is the obvious candidate to use to carry the xsbug protocol between the host and the browser because it is already bi-directional. Additionally, the Moddable SDK has a WebSocket client and server. However, the Moddable SDK implementation of WebSocket is written entirely in JavaScript. It cannot be used while debugging as execution of scripts is suspended while stopped at a breakpoint. Reimplementing all of the WebSocket protocol in native code to be used by the debugger is possible, but tedious.
 
 - `runmod` hosts a WebSocket server using the WebSocket JavaScript module from the Moddable SDK.
@@ -179,13 +179,13 @@ The WebSocket protocol is the obvious candidate to use to carry the xsbug protoc
 - The debugging implementation in XS operates as usual using the socket created by the WebSocket server, sending and receiving messages as if it is connected to xsbug.
 - The debugging transport code in `xsPlatform.c` -- which already implements support for serial and socket based connection -- wraps outgoing messages in WebSocket text frames and removes the WebSocket framing information from incoming messages.
 
-### To build
+### To Build
 The experimental support for WebSocket debugging is not yet part of the Moddable SDK. To try it, it is necessary to manually patch the build. The files to replace are in [`runmod/patches` directory](https://github.com/phoddie/runmod/tree/master/patches/).
 
 - `$MODDABLE/xs/platforms/esp/xsPlatform.h` -- define fields for WebSocket send and receive framing
 - `$MODDABLE/xs/platforms/esp/xsPlatform.c` -- implement WebSocket transport support
 
-### Implementation notes
+### Implementation Notes
 
 1. The WebSocket server in `runmod` is available at port 8080.
 1. The WebSocket server uses a subprotocol of `x-xsbug`. Strictly speaking this is unnecessary, but it is done to be explicit about the kind of data being transported. Should the protocol changes in the future, this mechanism allows for protocol version negotiation.
@@ -196,12 +196,12 @@ The experimental support for WebSocket debugging is not yet part of the Moddable
 ## Debugging
 The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
 
-### Host debugging
+### Host Debugging
 "Host debugging" is when the debugging connection is established at the time the JavaScript virtual machine is created. Debugging begins at the first line of JavaScript source code that XS executes.
 
 Host debugging of embedded devices using the Moddable SDK usually runs over a serial connection because serial is fast, reliable, and supported on nearly every microcontroller. Although seldom used, the debugging connection may also run over a network socket. In this case, the host must know the IP address of the computer running xsbug so that it can initiate a connection to the debug server running in xsbug.
 
-### Mod debugging
+### Mod Debugging
 This document introduces another approach to debugging, "mod debugging." Because a mod is not the first script a host executes, there is no need to connect to the debugger immediately. Further, the purpose of `runmod` is to be a host that works with only a browser-based IDE. "mod debugging" supports the equivalent of xsbug debugging in the web browser. 
 
 ## Remote Commands
@@ -209,7 +209,7 @@ Commands are sent to `runmod` over a WebSocket using a simple binary message for
 
 Remote Commands may be sent whether or on JavaScript is being executed, including when stopped at a breakpoint. When a command is received by the microcontroller execution of JavaScript by XS is suspended, if it is not already, in the receiving virtual machine. This allows several remote commands to be sent while execution is suspended. Execution resumes by sending a Go command on the xsbug protocol (e.g. `doGo` in the example below). 
 
-### Binary message format
+### Binary Message Format
 All Command messages use the binary WebSocket message format.
 
 - Fragmentation is not supported. Each message must be self-contained.
@@ -243,12 +243,12 @@ The `runmod` application uses the preferences feature of the Moddable SDK to con
 #### When a mod runs
 By default, the install mod is run immediately on booting the microcontroller. The mod can be configured to run immediately after a debugger connection is established or never. The choice is configured by setting the `config` domain and `when` key to `boot`, `debug` or `never`.
 
-#### Device name
+#### Device Name
 The name of the device may be changed from `runmod` by setting the preference in `config` domain with the `name` key.
 
  > Note: `runmod` does not perform validation checks on the name provided. It must be a valid mDNS name, less than 32 characters. Using all lower-case letters is recommended.
 
-## Example from browser
+## Example from Browser
 To try out the mod debugging and remote commands from the browser, [a small test](https://github.com/phoddie/runmod/tree/master/html/) is provided in the repository. It connects to `runmod` over WebSockets, sets a breakpoint, and traces messages to the console. It is not a useful example, it is just a starting point.
 
 The most useful part of the example is the `XsbugConnection` class which establishes the connection as well as sending and receiving messages. Each message in the xsbug protocol is an XML document. The `XsbugConnection` converts incoming messages to JavaScript objects and generates outgoing XML messages in response to JavaScript function calls. The class has been tested, but there may still be bugs and missing features.
@@ -308,12 +308,12 @@ The `XsbugConnection` instance provides functions to send Commands to the microc
 
 > Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference` and `doUninstall` commands use it.
 
-#### Exploring the xsbug protocol
+#### Exploring the xsbug Protocol
 The xsbug protocol is undocumented. Some experimentation will be needed to use it. The [source code of xsbug](https://github.com/Moddable-OpenSource/moddable/tree/public/tools/xsbug) is available, which provides a working example. Running xsbug locally with the simulator together with Wireshark is a good way to see how user interface features correspond to protocol messages.
 
 The protocol is quite simple. It relies on the debugger application to do much of the work. The protocol is designed to be as minimal as practical so it can fit comfortably inside a microcontroller as part of the XS engine.
 
-#### Putting it together
+#### Putting It Together
 The image below shows the example application running in the Chrome web browser. The messages sent between the browser and the microcontroller are displayed in the console.
 
 ![xsbug protocol hosted in Chrome](images/wsxsbug.png)
