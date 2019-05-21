@@ -76,7 +76,7 @@ class XsbugConnection {
 		}
 		sendOne(16);
 	}
-|	doRestart() {
+	doRestart() {
 		this.sendBinaryCommand(1);
 	}
 	doSetPreference(domain, key, value) {		// assumes 7 bit ASCII values
