@@ -1,6 +1,6 @@
 # Building and Installing JavaScript Mods
 #### Copyright 2019, Moddable Tech Inc.
-#### Updated May 3, 2019
+#### Updated May 20, 2019
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a ESP8266 and ESP32 microcontrollers using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
@@ -160,6 +160,11 @@ Modules that are built into the host are usually configured in the manifest to p
 Mods are JavaScript code, by definition. There is no native code in a mod. The XS JavaScript engine does support including native code in modules built into the host.
 
 ## Communicating with `runmod`
+The `runmod` app supports two communication transports: Wi-Fi and USB. The two transports are provide the same functionality, though the details of how messages are formatted differ.
+
+There are two kinds of messages. All debugging communication (e.g. the xsbug protocol) is purely text based. All commands (e.g. install, restart, etc) use a binary message format. This distinction between text and binary messages allows for simple routing of messages to either the debugging support in XS or the command handler of the host.
+
+### Using Wi-Fi
 The `runmod` app communicates over the network using the WebSocket protocol. The WebSocket protocol is used because:
 
 - It is fully bi-directional, unlike HTTP.
@@ -169,7 +174,7 @@ The `runmod` app communicates over the network using the WebSocket protocol. The
 
 All debugging messages are sent as WebSocket text messages. All other messages (commands) are sent as WebSocket binary messages. The Debugging section below explains how to interact with the xsbug protocol; the Remote Commands, how to send and receive command message.
  
-### WebSocket Connection Design
+#### WebSocket Connection Design
 The WebSocket protocol is the obvious candidate to use to carry the xsbug protocol between the host and the browser because it is already bi-directional. Additionally, the Moddable SDK has a WebSocket client and server. However, the Moddable SDK implementation of WebSocket is written entirely in JavaScript. It cannot be used while debugging as execution of scripts is suspended while stopped at a breakpoint. Reimplementing all of the WebSocket protocol in native code to be used by the debugger is possible, but tedious.
 
 - `runmod` hosts a WebSocket server using the WebSocket JavaScript module from the Moddable SDK.
@@ -179,19 +184,49 @@ The WebSocket protocol is the obvious candidate to use to carry the xsbug protoc
 - The debugging implementation in XS operates as usual using the socket created by the WebSocket server, sending and receiving messages as if it is connected to xsbug.
 - The debugging transport code in `xsPlatform.c` -- which already implements support for serial and socket based connection -- wraps outgoing messages in WebSocket text frames and removes the WebSocket framing information from incoming messages.
 
-### To Build
-The experimental support for WebSocket debugging is not yet part of the Moddable SDK. To try it, it is necessary to manually patch the build. The files to replace are in [`runmod/patches` directory](https://github.com/phoddie/runmod/tree/master/patches/).
-
-- `$MODDABLE/xs/platforms/esp/xsPlatform.h` -- define fields for WebSocket send and receive framing
-- `$MODDABLE/xs/platforms/esp/xsPlatform.c` -- implement WebSocket transport support
-
-### Implementation Notes
+#### Implementation Notes
 
 1. The WebSocket server in `runmod` is available at port 8080.
 1. The WebSocket server uses a subprotocol of `x-xsbug`. Strictly speaking this is unnecessary, but it is done to be explicit about the kind of data being transported. Should the protocol changes in the future, this mechanism allows for protocol version negotiation.
 1. Only one debugging connection may be active at a time. The Moddable SDK is configured to establish a host debugging connection over serial at start-up. To use mod debugging over WebSockets, there cannot be an active serial debugging connection. To ensure this, when a new incoming WebSocket connection arrives, any existing debugging connecting is closed.
 1. The current implementation of WebSocket support in `xsPlatform.c` breaks support for host debugging directly to xsbug because it assumes the transport is always WebSocket. This needs to be made an option.
 1. On a clean shut-down the server sends a WebSocket close message.
+
+### Using USB
+The `runmod` app communicates over USB using a serial connection. Because the ESP8266 and ESP32 do not have USB support, a bridge chip is used, typically the CP2102. The DTR pin is used to reset the microcontroller. The ESP8266 communicates at 921600 baud and the ESP32 at 460800 baud.
+
+When debugging over USB using a computer, the `serial2xsbug` command line tool serves as a bridge between USB and the network socket used by xsbug for communication. Each message sent begins with a XML processing instruction that indicates the JavaScript virtual machine that is sending or receiving the message. This allows a single USB connection to debug multiple virtual machines running on a single microcontroller. The preamble for a text (debugging) message looks like this:
+
+	<?xs.00321080?>
+
+The preamble for a binary (command) message looks like this:
+
+	<?xs#00321080?>
+
+The numeric portion identifies the virtual machine. When the device reboots, it sends a processing instruction with 0 for the virtual machine to indicate that it has been reset:
+
+	<?xs.00000000?>
+
+When a virtual machines closes, it sends a preamble like this:
+
+	<?xs-00321080?>
+
+For text messages, the text immediately follows the preamble and terminals with a CR/LF pair. For binary messages, the preamble is followed by a 16-bit big-endian length and then the binary message itself.
+
+#### Using WebUSB
+The `runmod` app is compatible with WebUSB, available in the Chrome web browser. WebUSB operates without a driver. If you have a driver installed to work with you development board, WebUSB will not be able to connect. You will need to uninstall or disable the driver first. On macOS, the following commands disable and enable the Silicon Labs driver.
+
+```
+sudo kextunload -b com.silabs.driver.CP210xVCPDriver
+
+sudo kextload -b com.silabs.driver.CP210xVCPDriver
+```
+
+### To Build
+The experimental support for WebSocket debugging and binary commands is not yet part of the Moddable SDK. To try it, it is necessary to manually patch the build. The files to replace are in [`runmod/patches` directory](https://github.com/phoddie/runmod/tree/master/patches/).
+
+- `$MODDABLE/xs/platforms/esp/xsPlatform.h`
+- `$MODDABLE/xs/platforms/esp/xsPlatform.c`
 
 ## Debugging
 The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
@@ -251,21 +286,31 @@ The name of the device may be changed from `runmod` by setting the preference in
 ## Example from Browser
 To try out the mod debugging and remote commands from the browser, [a small test](https://github.com/phoddie/runmod/tree/master/html/) is provided in the repository. It connects to `runmod` over WebSockets, sets a breakpoint, and traces messages to the console. It is not a useful example, it is just a starting point.
 
-The most useful part of the example is the `XsbugConnection` class which establishes the connection as well as sending and receiving messages. Each message in the xsbug protocol is an XML document. The `XsbugConnection` converts incoming messages to JavaScript objects and generates outgoing XML messages in response to JavaScript function calls. The class has been tested, but there may still be bugs and missing features.
+The example defines the `XsbugConnection` class which implements all the features in common between WebSocket and USB transport. The `XsbugConnection` class is subclassed by `XsbugWebSocket` and `XsbugUSB` to implement the transport specific details of managing the connection as well as sending and receiving messages. Each debugging message in the protocol is an XML document. Each command message in the protocol is a binary block of data. The `XsbugConnection` classes convert incoming messages to JavaScript objects and generates outgoing XML messages in response to JavaScript function calls. 
 
 The example contains two pre-compiled mods - `helloworld` and `httpget`. Ten seconds after establishing a connection to `runmod` on the microcontroller, it installs `helloworld` and restarts.
 
 	setTimeout(function() {
-		xsb.doInstall(0, helloWorldXSA)
-		xsb.doRestart()
+		xsb.doInstall(helloWorldXSA, function() {
+			console.log("INSTALL COMPLETE. RESTART.");
+			xsb.doRestart();
+		});
 	}, 10 * 1000);
 
 You can modify the example to install `httpget` instead by changing `helloWorldXSA` to `httpGetXSA`.
 
 #### Connecting
-To establish a connection, pass the URI to the `XsbugConnection` constructor:
+To establish a connection with WebSocket, pass the URI to the `XsbugWebSocket` constructor:
 
-	let xsb = new XsbugConnection("ws://runmod.local:8080");
+	let xsb = new XsbugWebSocket("ws://runmod.local:8080");
+
+To establish a connection with WebUSB, pass the baud rate to the `XsbugUSB` constructor:
+
+	let xsb = new XsbugUSB({baud: 921600});
+	
+When a new USB connection is established, the microcontroller is reset to begin a fresh debugging session.
+
+Once a connection is established, the USB and WebSocket connections operate in the same way. The WebSocket connection has the potential to be higher bandwidth, but is also higher latency.
 
 #### Receiving messages
 The `XsbugConnection` instance provides callback functions for each message type sent by xsbug. To receive a message, provide the corresponding callback:
@@ -303,7 +348,7 @@ The `XsbugConnection` instance provides functions to send Commands to the microc
 - `doGetPreference(domain, key, callback)` -- Retrieves the value of a preference as a string. The callback function is invoked with the result.
 - `doRestart()` -- Restart the microcontroller. The WebSocket connection will be closed.
 - `doUninstall([callback])` -- Uninstall the current mod. A restart is necessary after this for the change to take effect. Optional callback is invoked with result code from microcontroller.
-- `doInstall(offset, data)` -- Install data for new mod. A restart is necessary after this for the change to take effect. The `offset` starts at 0. The `data` must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments no bigger than 512 bytes.
+- `doInstall(data [, callback])` -- Install a new mod. A restart is necessary after installation for the change to take effect. The `data` argument must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments to transmit, and waits for an acknowledgement from the microcontroller before sending the next block. This flow control is necessary to avoid buffer overruns when communicating over USB.
 - `doSetPreference(domain, key, value)` -- Sets the value of a preference to a string.
 
 > Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference` and `doUninstall` commands use it.
