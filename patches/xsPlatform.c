@@ -42,6 +42,7 @@
 #if ESP32
 	#include "rom/ets_sys.h"
 	#include "nvs_flash/include/nvs_flash.h"
+	#include "esp_partition.h"
 
 	extern err_t tcp_write_safe(struct tcp_pcb *tcpPCB, const void *data, u16_t len, u8_t flags);
 	extern void tcp_output_safe(struct tcp_pcb *tcpPCB);
@@ -630,7 +631,7 @@ void fxReceive(txMachine* the)
 	else {
 		uint32_t timeout = the->debugConnectionVerified ? 0 : (modMilliseconds() + 2000);
 
-		while (true) {
+		while (!the->debugOffset) {
 			if (timeout && (timeout < modMilliseconds())) {
 				fxDisconnect(the);
 				break;
@@ -645,8 +646,12 @@ void fxReceive(txMachine* the)
 				the->debugFragments = f->next;
 				mxDebugMutexGive();
 
-				c_memcpy(the->debugBuffer, f->bytes, f->count);
-				the->debugOffset = f->count;
+				if (!f->binary) {
+					c_memcpy(the->debugBuffer, f->bytes, f->count);
+					the->debugOffset = f->count;
+				}
+				else
+					doRemoteCommmand(the, f->bytes, f->count);
 				c_free(f);
 				break;
 			}
@@ -685,6 +690,8 @@ void fxReceiveLoop(void)
 	static const char *tagEnd = ">\r\n";
 	static txMachine* current = NULL;
 	static uint8_t state = 0;
+	static uint16_t binary = 0;
+	static DebugFragment fragment = NULL;
 	static uint32_t value = 0;
 	static uint8_t bufferedBytes = 0;
 	static uint8_t buffered[28];		//@@ this must be smaller than sxMachine / debugBuffer
@@ -700,9 +707,15 @@ void fxReceiveLoop(void)
 			if (0 == state) {
 				current = NULL;
 				value = 0;
+				binary = 0;
 			}
 			if (c == c_read8(piBegin + state))
 				state++;
+			else
+			if ((6 == state) && ('#' == c)) {
+				binary = 1;
+				state++;
+			}
 			else
 				state = 0;
 		}
@@ -731,8 +744,12 @@ void fxReceiveLoop(void)
 		else if (state == 16) {
 			if (c == '>') {
 				current = (txMachine*)value;
-				state++;
-				bufferedBytes = 0;
+				if (binary)
+					state = 20;
+				else {
+					state++;
+					bufferedBytes = 0;
+				}
 			}
 			else
 				state = 0;
@@ -753,14 +770,16 @@ void fxReceiveLoop(void)
 				state = 17;
 
 			if (enqueue) {
-				DebugFragment fragment = c_malloc(sizeof(DebugFragmentRecord) + bufferedBytes);
+				fragment = c_malloc(sizeof(DebugFragmentRecord) + bufferedBytes);
 				if (NULL == fragment) {
 					modLog("no fragment memory");
 					break;
 				}
 				fragment->next = NULL;
 				fragment->count = bufferedBytes;
+				fragment->binary = 0;
 				c_memcpy(fragment->bytes, buffered, bufferedBytes);
+	enqueue:
 				if (NULL == current->debugFragments)
 					current->debugFragments = fragment;
 				else {
@@ -774,6 +793,31 @@ void fxReceiveLoop(void)
 					modMessagePostToMachine(current, NULL, 0xffff, doDebugCommand, current);
 				}
 				bufferedBytes = 0;
+			}
+		}
+		else if (20 == state) {
+			binary = c << 8;
+			state = 21;
+		}
+		else if (21 == state) {
+			binary += c;
+			state = 22;
+
+			fragment = c_malloc(sizeof(DebugFragmentRecord) + binary);
+			if (NULL == fragment) {
+				state = 0;
+				continue;
+			}
+			fragment->next = NULL;
+			fragment->count = binary;
+			fragment->binary = 1;
+			binary = 0;
+		}
+		else if (22 == state) {
+			fragment->bytes[binary++] = c;
+			if (fragment->count == binary) {
+				state = 0;
+				goto enqueue;
 			}
 		}
 	}
@@ -859,7 +903,13 @@ void fxSend(txMachine* the, txBoolean flags)
 
 		if (!the->inPrintf) {
 			mxDebugMutexTake();
-			fx_putpi(the, '.', false);
+			if (binary) {
+				fx_putpi(the, '#', true);
+				ESP_putc((uint8_t)(the->echoOffset >> 8));
+				ESP_putc((uint8_t)the->echoOffset);
+			}
+			else
+				fx_putpi(the, '.', false);
 		}
 		the->inPrintf = more;
 
@@ -1055,7 +1105,7 @@ void doRemoteCommmand(txMachine *the, uint8_t *cmd, uint32_t cmdLen)
 
 		default:
 			modLog("unrecognized command");
-			modLogInt(cmd[-1]);
+			modLogInt(cmdID);
 			resultCode = -1;
 			break;
 	}
