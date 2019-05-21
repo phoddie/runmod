@@ -170,9 +170,9 @@ The `runmod` app communicates over the network using the WebSocket protocol. The
 - It is fully bi-directional, unlike HTTP.
 - Web browsers have excellent support for WebSocket making it possible to implement development tools in the browser.
 
-`runmod` hosts a WebSocket server on port 8080. Development tools, such as an IDE, connect to the WebSocket server. Only one development tool may connect to `runmod` at a time. The WebSocket connection is used for debugging (xsbug) and to manage mods (install, uninstall, etc).
+`runmod` hosts a WebSocket server on port 8080. Development tools, such as an IDE, connect to the WebSocket server. Only one development tool may connect to `runmod` at a time. The WebSocket connection is used to both (xsbug) and manage mods (install, uninstall, etc).
 
-All debugging messages are sent as WebSocket text messages. All other messages (commands) are sent as WebSocket binary messages. The Debugging section below explains how to interact with the xsbug protocol; the Remote Commands, how to send and receive command message.
+All debugging messages are sent as WebSocket text messages. All other messages (commands) are sent as WebSocket binary messages. The Debugging section below explains how to interact with the xsbug protocol; the Remote Commands section, how to send and receive command messages.
  
 #### WebSocket Connection Design
 The WebSocket protocol is the obvious candidate to use to carry the xsbug protocol between the host and the browser because it is already bi-directional. Additionally, the Moddable SDK has a WebSocket client and server. However, the Moddable SDK implementation of WebSocket is written entirely in JavaScript. It cannot be used while debugging as execution of scripts is suspended while stopped at a breakpoint. Reimplementing all of the WebSocket protocol in native code to be used by the debugger is possible, but tedious.
@@ -193,9 +193,9 @@ The WebSocket protocol is the obvious candidate to use to carry the xsbug protoc
 1. On a clean shut-down the server sends a WebSocket close message.
 
 ### Using USB
-The `runmod` app communicates over USB using a serial connection. Because the ESP8266 and ESP32 do not have USB support, a bridge chip is used, typically the CP2102. The DTR pin is used to reset the microcontroller. The ESP8266 communicates at 921600 baud and the ESP32 at 460800 baud.
+The `runmod` app communicates over USB using a serial connection. Because the ESP8266 and ESP32 do not have build-in USB support, a bridge chip is used, typically the CP2102. The DTR pin is used to reset the microcontroller. The ESP8266 communicates at 921600 baud; the ESP32, at 460800 baud.
 
-When debugging over USB using a computer, the `serial2xsbug` command line tool serves as a bridge between USB and the network socket used by xsbug for communication. Each message sent begins with a XML processing instruction that indicates the JavaScript virtual machine that is sending or receiving the message. This allows a single USB connection to debug multiple virtual machines running on a single microcontroller. The preamble for a text (debugging) message looks like this:
+When debugging over USB using a computer, the `serial2xsbug` command line tool serves as a bridge between USB and the network socket used by xsbug for communication. Each message sent begins with a XML processing instruction that indicates the JavaScript virtual machine associated with the message (either the machine that is sending the message or receiving it). This allows one USB connection to be used to debug multiple virtual machines running on a single microcontroller. The preamble for a text (debugging) message looks like this:
 
 	<?xs.00321080?>
 
@@ -214,7 +214,7 @@ When a virtual machines closes, it sends a preamble like this:
 For text messages, the text immediately follows the preamble and terminals with a CR/LF pair. For binary messages, the preamble is followed by a 16-bit big-endian length and then the binary message itself.
 
 #### Using WebUSB
-The `runmod` app is compatible with WebUSB, available in the Chrome web browser. WebUSB operates without a driver. If you have a driver installed to work with you development board, WebUSB will not be able to connect. You will need to uninstall or disable the driver first. On macOS, the following commands disable and enable the Silicon Labs driver.
+The `runmod` app is compatible with [WebUSB](https://wicg.github.io/webusb/), available in the Chrome web browser. WebUSB operates without a driver. If you have a driver installed to work with you development board, WebUSB will not be able to connect. You will need to uninstall or disable the driver first. On macOS, the following commands disable and enable the Silicon Labs driver.
 
 ```
 sudo kextunload -b com.silabs.driver.CP210xVCPDriver
@@ -278,6 +278,8 @@ The `runmod` application uses the preferences feature of the Moddable SDK to con
 #### When a mod runs
 By default, the install mod is run immediately on booting the microcontroller. The mod can be configured to run immediately after a debugger connection is established or never. The choice is configured by setting the `config` domain and `when` key to `boot`, `debug` or `never`.
 
+**Note**: When running over USB, `debug` option is behaves the same as `never` because the USB debugging connection is established before the virtual machine is launched.
+
 #### Device Name
 The name of the device may be changed from `runmod` by setting the preference in `config` domain with the `name` key.
 
@@ -310,7 +312,16 @@ To establish a connection with WebUSB, pass the baud rate to the `XsbugUSB` cons
 	
 When a new USB connection is established, the microcontroller is reset to begin a fresh debugging session.
 
+>**Note**: The WebUSB security model requires USB connections to be initiated by a user interaction with a web page served over the network. WebUSB connections cannot be established from web pages loaded from a local file.
+
 Once a connection is established, the USB and WebSocket connections operate in the same way. The WebSocket connection has the potential to be higher bandwidth, but is also higher latency.
+
+### Disconnecting
+An active connection is closed by calling `disconnect`:
+
+	xsb.disconnect();
+
+For WebSocket connections, this closes the WebSocket instance. For USB connections, this releases the USB port. Disconnecting does not stop the currently running program or restart the microcontroller.
 
 #### Receiving messages
 The `XsbugConnection` instance provides callback functions for each message type sent by xsbug. To receive a message, provide the corresponding callback:
@@ -348,10 +359,10 @@ The `XsbugConnection` instance provides functions to send Commands to the microc
 - `doGetPreference(domain, key, callback)` -- Retrieves the value of a preference as a string. The callback function is invoked with the result.
 - `doRestart()` -- Restart the microcontroller. The WebSocket connection will be closed.
 - `doUninstall([callback])` -- Uninstall the current mod. A restart is necessary after this for the change to take effect. Optional callback is invoked with result code from microcontroller.
-- `doInstall(data [, callback])` -- Install a new mod. A restart is necessary after installation for the change to take effect. The `data` argument must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments to transmit, and waits for an acknowledgement from the microcontroller before sending the next block. This flow control is necessary to avoid buffer overruns when communicating over USB.
+- `doInstall(data [, callback])` -- Install a new mod. A restart is necessary after installation for the change to take effect. The `data` argument must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments to transmit, and waits for an acknowledgement from the microcontroller before sending the next block. Flow control is necessary to avoid buffer overruns when communicating over USB.
 - `doSetPreference(domain, key, value)` -- Sets the value of a preference to a string.
 
-> Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference` and `doUninstall` commands use it.
+> Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference`, `doInstall`, and `doUninstall` commands use it.
 
 #### Exploring the xsbug Protocol
 The xsbug protocol is undocumented. Some experimentation will be needed to use it. The [source code of xsbug](https://github.com/Moddable-OpenSource/moddable/tree/public/tools/xsbug) is available, which provides a working example. Running xsbug locally with the simulator together with Wireshark is a good way to see how user interface features correspond to protocol messages.
