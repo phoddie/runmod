@@ -12,15 +12,12 @@
  *
  */
 
+import Net from "net";
 import MDNS from "mdns";
 import {Server} from "websocket"
 import Preference from "preference";
 
 class ModDevServer extends Server {
-	constructor(dictionary) {
-		super(dictionary);
-		ModDevServer.runMod("boot")
-	}
 	callback(message, value) {
 		if (Server.handshake === message) {
 			ModDevServer.debug(this.detach());
@@ -45,9 +42,16 @@ class ModDevServer extends Server {
 Object.freeze(ModDevServer.prototype);
 
 export default function() {
-	const hostName = Preference.get("config", "name") || "runmod";
-	new MDNS({hostName});
-	new ModDevServer({port: 8080});
+	trace(`host ready on serial\n`);
 
-	trace(`host ready at ${hostName}.local\n`);
+	if (Net.get("IP")) {
+		const hostName = Preference.get("config", "name") || "runmod";
+		new ModDevServer({port: 8080});
+		new MDNS({hostName}, function(message, value) {
+			if ((1 === message) && value)
+				trace(`host ready at ws://${hostName}.local:8080\n`);
+		});
+	}
+
+	ModDevServer.runMod("boot")
 }
