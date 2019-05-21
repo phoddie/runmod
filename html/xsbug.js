@@ -455,7 +455,7 @@ class XsbugUSB extends XsbugConnection {
 			return;
 		if (dst[14] != '>'.charCodeAt())
 			return;
-		return {value: value.toString(16).padStart("0", 8), flag, binary};
+		return {value: value.toString(16).padStart(8, "0"), flag, binary};
 	}
 }
 
