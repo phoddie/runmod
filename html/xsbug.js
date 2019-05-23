@@ -256,6 +256,18 @@ class XsbugUSB extends XsbugConnection {
 			if (devices.length > 0) {
 				const usb = devices[0];
 				this.usb = usb;
+				const endpoints = usb.configuration.interfaces[0].alternates[0].endpoints;
+				let inEndpoint, outEndpoint;
+				for (let i = 0; i < endpoints.length; i++) {
+					if ("out" === endpoints[i].direction)
+						outEndpoint = endpoints[i].endpointNumber;
+					if ("in" === endpoints[i].direction)
+						inEndpoint = endpoints[i].endpointNumber;
+				}
+				if ((undefined === inEndpoint) || (undefined === outEndpoint))
+					throw new Error("can't find endpoints");
+				this.inEndpoint = inEndpoint;
+				this.outEndpoint = outEndpoint;
 				return usb;
 			}
 			return navigator.usb.requestDevice({ filters }).then(usb => {
@@ -324,8 +336,17 @@ class XsbugUSB extends XsbugConnection {
 	}
 	async readLoop() {
 		try {
+			const byteLength = 8192;
+			const results = [
+				this.usb.transferIn(this.inEndpoint, byteLength),
+				this.usb.transferIn(this.inEndpoint, byteLength),
+				this.usb.transferIn(this.inEndpoint, byteLength),
+			];
+			let phase = 0;
 			while (true) {
-				const result = await this.usb.transferIn(1, 32768);
+				const result = await results[phase];
+				results[phase] = this.usb.transferIn(this.inEndpoint, byteLength);
+				phase = (phase + 1) % results.length;
 				tracePacket("> ", result.data.buffer);
 				this.usbReceive(new Uint8Array(result.data.buffer));
 			}
@@ -333,14 +354,13 @@ class XsbugUSB extends XsbugConnection {
 		catch (e) {
 			console.log("readLoop exception: " + e);
 		}
-
 	}
 	async send(data) {
 		if ("string" == typeof data) {
 			const preamble = XsbugConnection.crlf + `<?xs.${this.currentMachine}?>` + XsbugConnection.crlf;
 			data = new TextEncoder().encode(preamble + data);
 			tracePacket("<", data);
-			await this.usb.transferOut(1, data);
+			await this.usb.transferOut(this.outEndpoint, data);
 		}
 		else {
 			let preamble = XsbugConnection.crlf + `<?xs#${this.currentMachine}?>`;
