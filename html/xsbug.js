@@ -78,6 +78,8 @@ class XsbugConnection {
 	}
 	doRestart() {
 		this.sendBinaryCommand(1);
+		this.reset();
+	}
 	}
 	doSetPreference(domain, key, value) {		// assumes 7 bit ASCII values
 		const byteLength = domain.length + 1 + key.length + 1 + value.length + 1;
@@ -234,10 +236,13 @@ class XsbugUSB extends XsbugConnection {
 		this.dst = new Uint8Array(32768);
 		this.connect();
 	}
-	connect() {
+	reset() {
 		this.binary = false;
 		this.dstIndex = 0;
 		this.currentMachine = undefined;
+	}
+	connect() {
+		this.reset();
 
 		this.getDevice().then(() => {
 			return this.openDevice();
@@ -256,7 +261,7 @@ class XsbugUSB extends XsbugConnection {
 			if (devices.length > 0) {
 				const usb = devices[0];
 				this.usb = usb;
-				const endpoints = usb.configuration.interfaces[0].alternates[0].endpoints;
+				const endpoints = usb.configurations[0].interfaces[0].alternates[0].endpoints;
 				let inEndpoint, outEndpoint;
 				for (let i = 0; i < endpoints.length; i++) {
 					if ("out" === endpoints[i].direction)
@@ -373,7 +378,7 @@ class XsbugUSB extends XsbugConnection {
 			buffer.set(payload, preamble.length + 2);
 
 			tracePacket("< ", buffer);
-			await this.usb.transferOut(1, buffer.buffer);
+			await this.usb.transferOut(this.outEndpoint, buffer.buffer);
 		}
 	}
 	async disconnect() {
