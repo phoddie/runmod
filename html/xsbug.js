@@ -80,6 +80,22 @@ class XsbugConnection {
 		this.sendBinaryCommand(1);
 		this.reset();
 	}
+	doSetBaud(baud, callback) {
+		const payload = new DataView(new ArrayBuffer(4));
+		payload.setUint32(0, baud, false);		// big endian
+		this.sendBinaryCommand(8, payload, msg => {
+			this.usb.controlTransferOut({
+				requestType: 'vendor',
+				recipient: 'device',
+				request: 0x01,		// SET_BAUDRATE
+				index: 0x00,
+				value: 3686400 / baud,
+			})
+			.then(() => {
+				if (callback)
+					callback.call(this, msg);
+			}, () => {debugger;});
+		});
 	}
 	doSetPreference(domain, key, value) {		// assumes 7 bit ASCII values
 		const byteLength = domain.length + 1 + key.length + 1 + value.length + 1;
@@ -241,103 +257,84 @@ class XsbugUSB extends XsbugConnection {
 		this.dstIndex = 0;
 		this.currentMachine = undefined;
 	}
-	connect() {
-		this.reset();
+	async connect() {
+		try {
+			this.reset();
 
-		this.getDevice().then(() => {
-			return this.openDevice();
-		})
-		.then(() => {
-			this.readLoop();
-		})
-		.catch(function(e) {
+			await this.getDevice();
+			await this.openDevice();
+			await this.readLoop();
+		}
+		catch (e) {
 			console.log("Connect error: ", e.message);
 			if (e.NETWORK_ERR === e.code)
 				console.log(" ** Looks like you need to uninstall the driver **");
-		});
+		}
 	}
-	getDevice() {
-		return navigator.usb.getDevices().then(devices => {
-			if (devices.length > 0) {
-				const usb = devices[0];
-				this.usb = usb;
-				const endpoints = usb.configurations[0].interfaces[0].alternates[0].endpoints;
-				let inEndpoint, outEndpoint;
-				for (let i = 0; i < endpoints.length; i++) {
-					if ("out" === endpoints[i].direction)
-						outEndpoint = endpoints[i].endpointNumber;
-					if ("in" === endpoints[i].direction)
-						inEndpoint = endpoints[i].endpointNumber;
-				}
-				if ((undefined === inEndpoint) || (undefined === outEndpoint))
-					throw new Error("can't find endpoints");
-				this.inEndpoint = inEndpoint;
-				this.outEndpoint = outEndpoint;
-				return usb;
+	async getDevice() {
+		let devices = await navigator.usb.getDevices();
+		if (devices.length > 0) {
+			const usb = devices[0];
+			this.usb = usb;
+			const endpoints = usb.configurations[0].interfaces[0].alternates[0].endpoints;
+			let inEndpoint, outEndpoint;
+			for (let i = 0; i < endpoints.length; i++) {
+				if ("out" === endpoints[i].direction)
+					outEndpoint = endpoints[i].endpointNumber;
+				if ("in" === endpoints[i].direction)
+					inEndpoint = endpoints[i].endpointNumber;
 			}
-			return navigator.usb.requestDevice({ filters }).then(usb => {
-				this.usb = usb;
-				return usb;
-			});
-		});
+			if ((undefined === inEndpoint) || (undefined === outEndpoint))
+				throw new Error("can't find endpoints");
+			this.inEndpoint = inEndpoint;
+			this.outEndpoint = outEndpoint;
+			return usb;
+		}
+		this.usb = await navigator.usb.requestDevice({ filters });
 	}
-	openDevice() {
-		return this.usb.open()
-			.then(() => {
-				return this.usb.selectConfiguration(1);
-			})
-			.then(() => {
-				console.log(this.usb);
-				return this.usb.claimInterface(0);
-			})
-			.then(() => {
-				return this.usb.controlTransferOut({
-					requestType: 'vendor',
-					recipient: 'device',
-					request: 0x00,		// IFC_ENABLE
-					index: 0x00,
-					value: 0x01
-				});
-			})
-			.then(() => {
-				return this.usb.controlTransferOut({
-					requestType: 'vendor',
-					recipient: 'device',
-					request: 0x07,		// SET_MHS
-					index: 0x00,
-					value: DTR.MASK | RTS.MASK | RTS.SET | DTR.CLEAR,
-				});
-			})
-			.then(() => {
-				return this.usb.controlTransferOut({
-					requestType: 'vendor',
-					recipient: 'device',
-					request: 0x01,		// SET_BAUDRATE
-					index: 0x00,
-					value: 3686400 / this.baud,
-				});
-			})
-			.then(() => {
-				return this.usb.controlTransferOut({
-					requestType: 'vendor',
-					recipient: 'device',
-					request: 0x12,	// PURGE
-					index: 0x00,
-					value: 0x0f,		// transmit & receive
-				});
-			})
-			.then(() => {
-				return new Promise(resolve => setTimeout(resolve, 100));
-			})
-			.then(() => {
-				return this.usb.controlTransferOut({
-					requestType: 'vendor',
-					recipient: 'device',
-					request: 0x07,	// SET_MHS
-					index: 0x00,
-					value: DTR.MASK | DTR.SET,
-				});
-			});
+	async openDevice() {
+		await this.usb.open();
+		await this.usb.selectConfiguration(1);
+
+		console.log(this.usb);
+		await this.usb.claimInterface(0);
+
+		await this.usb.controlTransferOut({
+			requestType: 'vendor',
+			recipient: 'device',
+			request: 0x00,		// IFC_ENABLE
+			index: 0x00,
+			value: 0x01
+		});
+		await this.usb.controlTransferOut({
+			requestType: 'vendor',
+			recipient: 'device',
+			request: 0x07,		// SET_MHS
+			index: 0x00,
+			value: DTR.MASK | RTS.MASK | RTS.SET | DTR.CLEAR,
+		});
+		await this.usb.controlTransferOut({
+			requestType: 'vendor',
+			recipient: 'device',
+			request: 0x01,		// SET_BAUDRATE
+			index: 0x00,
+			value: 3686400 / this.baud,
+		});
+		await this.usb.controlTransferOut({
+			requestType: 'vendor',
+			recipient: 'device',
+			request: 0x12,	// PURGE
+			index: 0x00,
+			value: 0x0f,		// transmit & receive
+		});
+		await new Promise(resolve => setTimeout(resolve, 100));
+		await this.usb.controlTransferOut({
+			requestType: 'vendor',
+			recipient: 'device',
+			request: 0x07,	// SET_MHS
+			index: 0x00,
+			value: RTS.MASK | RTS.CLEAR,
+		});
 	}
 	async readLoop() {
 		try {
