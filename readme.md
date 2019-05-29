@@ -1,6 +1,6 @@
 # Building and Installing JavaScript Mods
 #### Copyright 2019, Moddable Tech Inc.
-#### Updated May 20, 2019
+#### Updated May 29, 2019
 
 This project is a simple example of how to install and run mods (e.g. JavaScript modules) on a ESP8266 and ESP32 microcontrollers using the [Moddable SDK](https://github.com/Moddable-OpenSource/moddable). The project has two parts: the host application and the mods.
 
@@ -266,11 +266,16 @@ Replies are optional so that there is no unnecessary network traffic on requests
 Commands ID values are stored as a one byte value. The same Command IDs are used for sending and receiving. All multi-byte integer values are transmitted in network byte order (e.g. big-endian).
 
 - 0 - **reserved**. It is an error to send a command with this ID.
-- 1 - **restart** (no payload). Closes the WebSocket connection and restarts the target device.
+- 1 - **restart** (no payload). Closes the debugging connection (e.g. WebSocket connection) and restarts the target device.
 - 2 - **uninstall mod** (no payload). Uninstalls the current mod. Restart is required for this to take effect. It is not necessary to uninstall prior to installing a mod.
 - 3 - **install mod data**. Because mods are often bigger than 1 KB, they must be fragmented when installed. The fragments start at offset 0 and increase. There should be no gaps. The first four bytes of the payload are the offset into the mod data stored, the remaining payload bytes are mod binary data.
 - 4 - **set preference**. The payload is 3 zero-terminated (C) strings: preference domain, key, and value. 
 - 5 - **reply**. The first two bytes of the payload are the message ID that this reply corresponds to. The next two bytes are the result code (0 for no error). Any additional data is specific to the command code of the requesting message.
+- 6 - **get preference**. The payload is 2 zero-terminated (C) strings: preference domain and value. The preference value is returned in a reply message as a zero-terminated (C) string
+- 7 - **reserved**
+- 8 - **set baud**. The payload is a 4-byte big endian value with the desired baud rate. The reply, if requested, is sent before the microcontroller changes the baud rate.
+- 9 - **set time**. The payload is one, two, or three 4-byte big endian values. The first value is the UTC time in seconds, the second is the time zone offset without daylight savings time applied, and the third is the current daylight savings time offset. The first parameter works on ESP8266 and ESP32. The remaining parameters are currently only supported on ESP8266.
+- 10 - **load module**. The payload is a single zero terminated (C) string. The string is a module specifier for a module to load. The load module command allows a tool to trigger execution of a module's body independently of the host. If the specified module is already loaded, this command has no effect. Note that the module is not loaded immediately upon receipt of the command, but when execution returns  out to the main event loop (similar to a Promise).
 
 ### Preferences
 The `runmod` application uses the preferences feature of the Moddable SDK to configure certain options.
@@ -357,10 +362,11 @@ The `XsbugConnection` instance provides functions to send each type of request s
 The `XsbugConnection` instance provides functions to send Commands to the microcontroller.
 
 - `doGetPreference(domain, key, callback)` -- Retrieves the value of a preference as a string. The callback function is invoked with the result.
-- `doRestart()` -- Restart the microcontroller. The WebSocket connection will be closed.
+- `doRestart()` -- Restart the microcontroller. The WebSocket connection, if one is active, will be closed.
 - `doUninstall([callback])` -- Uninstall the current mod. A restart is necessary after this for the change to take effect. Optional callback is invoked with result code from microcontroller.
 - `doInstall(data [, callback])` -- Install a new mod. A restart is necessary after installation for the change to take effect. The `data` argument must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments to transmit, and waits for an acknowledgement from the microcontroller before sending the next block. Flow control is necessary to avoid buffer overruns when communicating over USB.
 - `doSetPreference(domain, key, value)` -- Sets the value of a preference to a string.
+- `doSetBaud(baud[, callback])` -- Changes the baud rate of the active serial connection (meaningless when using a WebSocket connection).
 
 > Note: `XsbugConnection` implements a general purpose mechanism to deliver responses to Commands, the `pending` list. At this time, only the `doGetPreference`, `doInstall`, and `doUninstall` commands use it.
 
