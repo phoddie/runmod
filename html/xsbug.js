@@ -46,7 +46,7 @@ class XsbugConnection {
 		const payload = new Uint8Array(byteLength);
 		let j = 0;
 		for (let i = 0; i < domain.length; i++)
-			payload[j++] = domain.charCodeAt(i)
+			payload[j++] = domain.charCodeAt(i);
 		j++;
 		for (let i = 0; i < key.length; i++)
 			payload[j++] =  key.charCodeAt(i);
@@ -76,6 +76,13 @@ class XsbugConnection {
 		}
 		sendOne(16);
 	}
+	doLoadModule(name, callback) {
+		const payload = new Uint8Array(name.length + 1);
+		for (let i = 0; i < name.length; i++)
+			payload[i] = name.charCodeAt(i);
+
+		this.sendBinaryCommand(10, payload, callback);
+	}
 	doRestart() {
 		this.sendBinaryCommand(1);
 		this.reset();
@@ -102,13 +109,13 @@ class XsbugConnection {
 		const payload = new Uint8Array(byteLength);
 		let j = 0;
 		for (let i = 0; i < domain.length; i++)
-			payload[j++] = domain.charCodeAt(i)
+			payload[j++] = domain.charCodeAt(i);
 		j++;
 		for (let i = 0; i < key.length; i++)
-			payload[j++] =  key.charCodeAt(i)
+			payload[j++] =  key.charCodeAt(i);
 		j++;
 		for (let i = 0; i < value.length; i++)
-			payload[j++] = value.charCodeAt(i)
+			payload[j++] = value.charCodeAt(i);
 
 		this.sendBinaryCommand(4, payload);
 	}
@@ -243,7 +250,7 @@ const RTS = Object.freeze({
 
 /*
 	xsbug can send a lot of data. WebUSB doesn't seem to buffer much.
-	Without large reads and a large receive buffer, overflows happen.
+	The implementation keeps multiple reads pendinng to try to avoid dropped data.
 */
 class XsbugUSB extends XsbugConnection {
 	constructor(options = {}) {
@@ -529,10 +536,12 @@ class XsbugMessage {
 	}
 	static break(message, node) {
 		message.break = {
-			path: node.attributes.path.value,
-			line: parseInt(node.attributes.line.value),
 			message: node.textContent,
 		};
+		if (node.attributes.path)
+			message.path = node.attributes.path.value;
+		if (node.attributes.line)
+			message.path = node.attributes.line.value;
 	}
 	static log(message, node) {
 		message.log = node.textContent;
