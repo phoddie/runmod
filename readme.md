@@ -222,11 +222,13 @@ sudo kextunload -b com.silabs.driver.CP210xVCPDriver
 sudo kextload -b com.silabs.driver.CP210xVCPDriver
 ```
 
+<!--
 ### To Build
 The experimental support for WebSocket debugging and binary commands is not yet part of the Moddable SDK. To try it, it is necessary to manually patch the build. The files to replace are in [`runmod/patches` directory](https://github.com/phoddie/runmod/tree/master/patches/).
 
 - `$MODDABLE/xs/platforms/esp/xsPlatform.h`
 - `$MODDABLE/xs/platforms/esp/xsPlatform.c`
+-->
 
 ## Debugging
 The mods are built with debugging enabled (the `-d` option passed to `xsc`). If the host is connected to xsbug using a serial connection, the mod may be debugged using xsbug. For example, use xsbug to set a breakpoint on a line of source code or add a `debugger` statement to your mod's source code.
