@@ -362,6 +362,7 @@ The `XsbugConnection` instance provides functions to send each type of request s
 The `XsbugConnection` instance provides functions to send Commands to the microcontroller.
 
 - `doGetPreference(domain, key, callback)` -- Retrieves the value of a preference as a string. The callback function is invoked with the result.
+- `doLoadModule(name[, callback])` -- Loads the module with the module specifier `name`. Roughly equivalent to `require(name)`.
 - `doRestart()` -- Restart the microcontroller. The WebSocket connection, if one is active, will be closed.
 - `doUninstall([callback])` -- Uninstall the current mod. A restart is necessary after this for the change to take effect. Optional callback is invoked with result code from microcontroller.
 - `doInstall(data [, callback])` -- Install a new mod. A restart is necessary after installation for the change to take effect. The `data` argument must be an instance of an `ArrayBuffer`. The implementation of `doInstall` breaks the data into fragments to transmit, and waits for an acknowledgement from the microcontroller before sending the next block. Flow control is necessary to avoid buffer overruns when communicating over USB.
