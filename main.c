@@ -13,7 +13,7 @@
  */
 
 #include "xsmc.h"
-#include "xsesp.h"
+#include "xsHost.h"
 
 extern void fxConnectTo(xsMachine *the, void *pcb);
 extern void *modSocketGetLWIP(xsMachine *the, xsSlot *slot);

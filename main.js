@@ -17,6 +17,8 @@ import MDNS from "mdns";
 import {Server} from "websocket"
 import Preference from "preference";
 
+let compartment;
+
 class ModDevServer extends Server {
 	callback(message, value) {
 		if (Server.handshake === message) {
@@ -31,10 +33,11 @@ class ModDevServer extends Server {
 			return;
 
 		try {
-			require("mod");
+			compartment = undefined;
+			compartment = new Compartment("mod", globalThis, Compartment.map);
 		}
-		catch {
-			trace("exception loading mod\n");
+		catch (e) {
+			trace(`exception loading mod: ${e}\n`);
 		}
 	}
 	static debug(socket) @ "xs_debug";		// hand-off native socket to debugger
@@ -43,6 +46,7 @@ Object.freeze(ModDevServer.prototype);
 
 export default function() {
 	trace(`host ready on serial\n`);
+	trace(`Date is ${new Date}\n`);
 
 	if (Net.get("IP")) {
 		const hostName = Preference.get("config", "name") || "runmod";
