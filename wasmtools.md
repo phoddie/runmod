@@ -1,6 +1,6 @@
 # Moddable Tools in WebAssembly
-#### Copyright 2019 Moddable Tech, Inc.
-#### May 6, 2019
+Copyright 2019 Moddable Tech, Inc.<BR>
+Last updated: September 25, 2019
 
 The XS compiler and linker together with the [Moddable SDK build tools](https://github.com/Moddable-OpenSource/moddable/tree/public/tools) are now available as an WebAssembly (wasm) build. The tools are implemented using a mix of C code and JavaScript. The JavaScript code is executed by the XS JavaScript engine, which is part of the wasm build.
 
@@ -8,39 +8,57 @@ The XS compiler and linker together with the [Moddable SDK build tools](https://
 
 All tools are built into a single binary for convenience of working in the wasm runtime.
 
-Normally apps using the Moddable SDK are built using the [`mcconfig` tool](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/tools.md#mcconfig) which uses a JSON [application manifest](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/manifest.md) to determine what to build. Moddable SDK apps contain both native code and JavaScript. Mods, on the other hand, contain only JavaScript code. A new tools, `mcrun`, is the equivalent of `mcconfig` for mods. It uses a subset of the same manifest format, which includes support for JavaScript modules and resources, but excludes all support related to building and configuring native code.
+Normally apps using the Moddable SDK are built using the [`mcconfig` tool](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/tools.md#mcconfig) which uses a JSON [application manifest](https://github.com/Moddable-OpenSource/moddable/blob/public/documentation/tools/manifest.md) to determine what to build. Moddable SDK apps contain both native code and JavaScript. Mods, on the other hand, contain only JavaScript code. A new tool, `mcrun`, is the equivalent of `mcconfig` for mods. It uses a subset of the same manifest format, which includes support for JavaScript modules and resources, but excludes all support related to building and configuring native code.
 
 ## Build Instructions
 
-- Do a clean rebuild of the macOS tool chain
+1. Download [Emscripten](https://emscripten.org/) and edit PATH and other environment variables in the current terminal.
 
-```
+	```
+	git clone https://github.com/emscripten-core/emsdk.git
+	cd emsdk
+	source ./emsdk_env.sh
+	```
+	
+2. Download [Binaryen](https://github.com/WebAssembly/binaryen) and edit the PATH environment variable.
+
+	```
+	git clone https://github.com/WebAssembly/binaryen.git
+	cd binaryen/bin
+	export PATH=$(pwd):$PATH
+	```
+	
+3. Do a clean rebuild of the macOS tool chain.
+
+	```
 	cd $MODDABLE/build/makefiles/mac
 	make
-```
+	```
 
-- Build the wasm tools. The wasm build assumes you have the wasm build tools installed (e.g. emscripten).
+4. By default, the wasm tools are built for the `web` environment. To use them in a `worker` environment change the definition of `ENVIRONMENT` in [`build/makefiles/wasm/tools.mk`](https://github.com/Moddable-OpenSource/moddable/blob/public/build/makefiles/wasm/tools.mk#L220):
 
-```
+	```
+	-s ENVIRONMENT=worker\
+	```
+
+5. Build the wasm tools.
+
+	```
 	cd $MODDABLE/build/makefiles/wasm
 	make
-```
+	```
 
-- The output of the build includes release and debug versions of the tools. They are located in `$MODDABLE/build/bin/wasm/debug` and `$MODDABLE/build/bin/wasm/release`. There are two files, `tools.js` and `tools.wasm`.
+	The output of the build includes release and debug versions of the tools. They are located in `$MODDABLE/build/bin/wasm/debug` and `$MODDABLE/build/bin/wasm/release`. There are two files, `tools.js` and `tools.wasm`.
 
-- To test, copy [this HTML file](https://gist.github.com/phoddie/bade2f7e49f2e4da26877c8f8d380c79) to the same directory with `tools.js` and `tools.wasm` in `$MODDABLE/build/bin/wasm/debug`. Then start a web server:
+6. To test, copy [this HTML file](https://gist.github.com/phoddie/bade2f7e49f2e4da26877c8f8d380c79) to the same directory with `tools.js` and `tools.wasm` in `$MODDABLE/build/bin/wasm/debug`. Then start a web server:
 
-```
+	```
 	cd $MODDABLE/build/bin/wasm/debug
 	python -m SimpleHTTPServer 8000
-```
+	```
 
-- In a browser go to `http://localhost:8000`. There is button to select a directory. Select for instance `runmod/mods/helloworld`.
+7. In a browser go to `http://localhost:8000`. There is button to select a directory. Select for instance `runmod/mods/helloworld`.
 The archive is built and downloaded.
-
-> **Note**: The wasm tools are built for the `web` environment. To use them in a `worker` environment change the definition of `ENVIRONMENT` in [`build/makefiles/wasm/tools.mk`](https://github.com/Moddable-OpenSource/moddable/blob/public/build/makefiles/wasm/tools.mk#L220):
-
-	-s ENVIRONMENT=worker\
 
 ## Executing `mcrun` in the Browser
 If you look at the HTML file you will notice that most of the code is to upload the files in the tools file system and to download the archive from the tools file system. To build the archive, the script first calls `mcrun`:
