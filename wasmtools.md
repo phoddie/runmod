@@ -1,6 +1,6 @@
 # Moddable Tools in WebAssembly
-Copyright 2019 Moddable Tech, Inc.<BR>
-Last updated: September 25, 2019
+Copyright 2019-2020 Moddable Tech, Inc.<BR>
+Last updated: February 27, 2020
 
 The XS compiler and linker together with the [Moddable SDK build tools](https://github.com/Moddable-OpenSource/moddable/tree/public/tools) are now available as an WebAssembly (wasm) build. The tools are implemented using a mix of C code and JavaScript. The JavaScript code is executed by the XS JavaScript engine, which is part of the wasm build.
 
@@ -12,38 +12,55 @@ Normally apps using the Moddable SDK are built using the [`mcconfig` tool](https
 
 ## Build Instructions
 
-1. Download [Emscripten](https://emscripten.org/) and edit PATH and other environment variables in the current terminal.
+1. Clone the [Emscripten](https://emscripten.org/) repository and edit PATH and other environment variables in the current terminal.
 
-	```
+	```text
 	git clone https://github.com/emscripten-core/emsdk.git
 	cd emsdk
 	source ./emsdk_env.sh
 	```
 	
+	If you already have the Emscripten repository, upgrade to the latest version using the following commands:
+	
+	```text
+	cd PATH/TO/emsdk
+	git pull
+	./emsdk install latest
+	./emsdk activate latest
+	source ./emsdk_env.sh
+	```
+	
+	> We last tested using version `1.39.8` (commit `1458145cf4f3db0fb548343e6acab267eef8e4ef`).
+	
 2. Download [Binaryen](https://github.com/WebAssembly/binaryen) and edit the PATH environment variable.
 
-	```
+	```text
 	git clone https://github.com/WebAssembly/binaryen.git
 	cd binaryen/bin
 	export PATH=$(pwd):$PATH
 	```
 	
+	> We last tested using wasm-opt `version_89-46-ged2c3cd0` (commit `2105214971e722525c328a23a5d215789fafb24c`)
+	
 3. Do a clean rebuild of the macOS tool chain.
 
-	```
-	cd $MODDABLE/build/makefiles/mac
+	```text
+	cd $MODDABLE/build
+	rm -r bin
+	rm -r tmp
+	cd makefiles/mac
 	make
 	```
 
-4. By default, the wasm tools are built for the `web` environment. To use them in a `worker` environment change the definition of `ENVIRONMENT` in [`build/makefiles/wasm/tools.mk`](https://github.com/Moddable-OpenSource/moddable/blob/public/build/makefiles/wasm/tools.mk#L220):
+4. By default, the wasm tools are built for the `web` environment. To use them in a `worker` environment change the definition of `ENVIRONMENT` in [`build/makefiles/wasm/tools.mk`](https://github.com/Moddable-OpenSource/moddable/blob/public/build/makefiles/wasm/tools.mk#L221):
 
-	```
+	```text
 	-s ENVIRONMENT=worker\
 	```
 
 5. Build the wasm tools.
 
-	```
+	```text
 	cd $MODDABLE/build/makefiles/wasm
 	make
 	```
@@ -52,7 +69,7 @@ Normally apps using the Moddable SDK are built using the [`mcconfig` tool](https
 
 6. To test, copy [this HTML file](https://gist.github.com/phoddie/bade2f7e49f2e4da26877c8f8d380c79) to the same directory with `tools.js` and `tools.wasm` in `$MODDABLE/build/bin/wasm/debug`. Then start a web server:
 
-	```
+	```text
 	cd $MODDABLE/build/bin/wasm/debug
 	python -m SimpleHTTPServer 8000
 	```
@@ -77,13 +94,14 @@ Resources provide efficient access to data in the Moddable SDK. You can think of
 
 The `mcrun` tool supports the same resource features as `mcconfig`. The `modballs` mod is a simple way to try that. To try it, you'll need add the Piu user interface framework and Commodetto graphics library to the `runmod` host. Modify its manifest to `manifest_piu` to the `include` array:
 
+```text
+"include": [
+	"$(MODDABLE)/examples/manifest_base.json",
+	"$(MODDABLE)/examples/manifest_net.json",
+	"$(MODULES)/network/mdns/manifest.json",
+	"$(MODULES)/files/preference/manifest.json",
+	"$(MODDABLE)/examples/manifest_piu.json"
+]
 ```
-	"include": [
-		"$(MODDABLE)/examples/manifest_base.json",
-		"$(MODDABLE)/examples/manifest_net.json",
-		"$(MODULES)/network/mdns/manifest.json",
-		"$(MODULES)/files/preference/manifest.json",
-		"$(MODDABLE)/examples/manifest_piu.json",
-	],
-```
+
 Rebuild and redeploy the `runmod` host. Then you can build and run `modballs` as any other mod.
