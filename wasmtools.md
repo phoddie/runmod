@@ -32,11 +32,13 @@ Normally apps using the Moddable SDK are built using the [`mcconfig` tool](https
 	
 	> We last tested using version `1.39.8` (commit `1458145cf4f3db0fb548343e6acab267eef8e4ef`).
 	
-2. Download [Binaryen](https://github.com/WebAssembly/binaryen) and edit the PATH environment variable.
+2. Download [Binaryen](https://github.com/WebAssembly/binaryen), build it, and edit the PATH environment variable.
 
 	```text
 	git clone https://github.com/WebAssembly/binaryen.git
-	cd binaryen/bin
+	cd binaryen
+	cmake . && make
+	cd bin
 	export PATH=$(pwd):$PATH
 	```
 	
